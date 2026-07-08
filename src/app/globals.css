@@ -1,0 +1,127 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-50: #fff8eb;
+  --color-brand-100: #ffe7bf;
+  --color-brand-200: #f8d28a;
+  --color-brand-500: #c8902f;
+  --color-brand-600: #a9711e;
+  --color-brand-700: #8a5c14;
+  --color-brand-900: #3b2710;
+  --color-brand-950: #1c1510;
+  --shadow-premium: 0 24px 90px rgba(0, 0, 0, 0.42);
+  --shadow-button: 0 16px 34px rgba(200, 144, 47, 0.22);
+}
+
+:root {
+  color-scheme: dark;
+  --fundo: #080706;
+  --superficie: rgba(255, 255, 255, 0.06);
+  --linha: rgba(255, 255, 255, 0.10);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  background: var(--fundo);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(200, 144, 47, 0.15), transparent 34rem),
+    radial-gradient(circle at bottom right, rgba(255, 255, 255, 0.07), transparent 28rem),
+    #080706;
+  color: #fff;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+a {
+  cursor: pointer;
+}
+
+::selection {
+  background: rgba(200, 144, 47, 0.42);
+  color: #fff8eb;
+}
+
+.fundo-premium {
+  background:
+    linear-gradient(180deg, rgba(8, 7, 6, 0.68), rgba(8, 7, 6, 0.98)),
+    radial-gradient(circle at top, rgba(200, 144, 47, 0.20), transparent 34rem),
+    #080706;
+}
+
+.texto-gradiente-ouro {
+  background: linear-gradient(135deg, #fff8eb 0%, #ffe7bf 32%, #c8902f 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.grade-barbearia {
+  background-image:
+    linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px),
+    url('/pattern-barbearia.svg');
+  background-size: 42px 42px, 42px 42px, 160px 160px;
+}
+
+.hero-vidro {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.045)),
+    rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: var(--shadow-premium);
+  backdrop-filter: blur(18px);
+}
+
+.brilho-ouro {
+  position: relative;
+  overflow: hidden;
+}
+
+.brilho-ouro::after {
+  content: "";
+  position: absolute;
+  inset: -140% auto auto -40%;
+  width: 55%;
+  height: 320%;
+  transform: rotate(28deg);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.22), transparent);
+  transition: transform 700ms ease;
+}
+
+.brilho-ouro:hover::after {
+  transform: translateX(360%) rotate(28deg);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0c0b0a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(200, 144, 47, 0.45);
+  border-radius: 999px;
+  border: 2px solid #0c0b0a;
+}
