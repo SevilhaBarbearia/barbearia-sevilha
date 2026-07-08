@@ -43,15 +43,13 @@ function dataHoraPtBR(valor: string) {
 }
 
 function normalizarDiaFiltro(valor?: string) {
-  if (!valor || valor === 'hoje') return String(new Date().getDay());
-  if (valor === 'todos') return 'todos';
-
+  // A tela administrativa mostra apenas um dia por vez para evitar poluição visual.
+  // Quando nenhum dia é informado, usamos o dia atual como filtro padrão.
   const numero = Number(valor);
   return Number.isInteger(numero) && numero >= 0 && numero <= 6 ? String(numero) : String(new Date().getDay());
 }
 
 function mesmoDiaSemana(valorISO: string, diaFiltro: string) {
-  if (diaFiltro === 'todos') return true;
   return new Date(valorISO).getDay() === Number(diaFiltro);
 }
 
@@ -82,7 +80,7 @@ export default async function HorariosAdminPage({ searchParams }: PageProps) {
   const bloqueios = (bloqueiosResult.data ?? []) as BloqueioComBarbeiro[];
 
   const horariosFiltrados = horarios.filter((horario) => {
-    const passaDia = diaFiltro === 'todos' || horario.day_of_week === Number(diaFiltro);
+    const passaDia = horario.day_of_week === Number(diaFiltro);
     const passaBarbeiro = barbeiroFiltro === 'todos' || horario.barber_id === barbeiroFiltro;
     return passaDia && passaBarbeiro;
   });
@@ -93,7 +91,7 @@ export default async function HorariosAdminPage({ searchParams }: PageProps) {
     return passaDia && passaBarbeiro;
   });
 
-  const textoFiltroDia = diaFiltro === 'todos' ? 'Todos os dias' : nomeDiaSemana(Number(diaFiltro));
+  const textoFiltroDia = nomeDiaSemana(Number(diaFiltro));
 
   return (
     <div className="grid gap-4 sm:gap-5">
@@ -101,7 +99,7 @@ export default async function HorariosAdminPage({ searchParams }: PageProps) {
         <Badge><Clock3 className="h-3.5 w-3.5" /> Agenda operacional</Badge>
         <h1 className="mt-3 text-2xl font-black tracking-tight text-white sm:text-3xl lg:text-4xl">Horários e bloqueios</h1>
         <p className="mt-2 max-w-3xl text-zinc-300">
-          Defina expediente semanal, pausas internas e bloqueios específicos. O filtro abaixo evita poluir a tela com todos os dias ao mesmo tempo.
+          Defina expediente semanal, pausas internas e bloqueios específicos. A tela exibe apenas um dia por vez para ficar mais limpa e fácil de operar.
         </p>
       </div>
 
@@ -119,7 +117,6 @@ export default async function HorariosAdminPage({ searchParams }: PageProps) {
           <div>
             <Label htmlFor="filtro-dia">Dia para exibir</Label>
             <Select id="filtro-dia" name="dia" defaultValue={diaFiltro}>
-              <option value="todos">Todos os dias</option>
               {diasDaSemana.map((dia) => (
                 <option key={dia.value} value={dia.value}>{dia.label}</option>
               ))}
@@ -141,12 +138,12 @@ export default async function HorariosAdminPage({ searchParams }: PageProps) {
           </Button>
 
           <ButtonLink href="/admin/horarios" variant="secondary" className="w-full lg:w-auto">
-            Hoje
+            Ver hoje
           </ButtonLink>
         </form>
         <p className="mt-4 text-sm text-zinc-300">
-          Exibindo: <strong className="text-brand-100">{textoFiltroDia}</strong>
-          {barbeiroFiltro !== 'todos' && ' • barbeiro selecionado'}.
+          Exibindo somente: <strong className="text-brand-100">{textoFiltroDia}</strong>
+          {barbeiroFiltro !== 'todos' && ' • barbeiro selecionado'}. Para outro dia, selecione no filtro e clique em Filtrar.
         </p>
       </Card>
 
@@ -159,7 +156,7 @@ export default async function HorariosAdminPage({ searchParams }: PageProps) {
             <div>
               <CardTitle>Novo expediente semanal</CardTitle>
               <CardDescription>
-                Cadastre o dia de atendimento do barbeiro. Depois use o filtro para revisar somente o dia desejado.
+                Cadastre um expediente por vez. A revisão abaixo mostra somente o dia selecionado no filtro.
               </CardDescription>
             </div>
           </div>
@@ -176,7 +173,7 @@ export default async function HorariosAdminPage({ searchParams }: PageProps) {
             <div>
               <CardTitle>Novo bloqueio específico</CardTitle>
               <CardDescription>
-                Escolha o barbeiro, data e período exato do bloqueio. Não é necessário exibir todos os dias da semana na tela.
+                Selecione o barbeiro, o dia e o intervalo que deseja bloquear. O formulário evita usar duas datas completas e deixa a operação mais clara.
               </CardDescription>
             </div>
           </div>
@@ -191,7 +188,7 @@ export default async function HorariosAdminPage({ searchParams }: PageProps) {
           <div>
             <CardTitle>Expediente cadastrado</CardTitle>
             <CardDescription>
-              A lista respeita o filtro de dia/barbeiro para manter a tela limpa. Horários inativos ficam salvos, mas não liberam reservas.
+              A lista mostra apenas o dia selecionado. Horários inativos ficam salvos, mas não liberam reservas.
             </CardDescription>
           </div>
           <Badge><ShieldCheck className="h-3.5 w-3.5" /> Protegido por RLS</Badge>
@@ -241,7 +238,7 @@ export default async function HorariosAdminPage({ searchParams }: PageProps) {
       <Card>
         <CardTitle>Bloqueios futuros</CardTitle>
         <CardDescription>
-          Exibindo bloqueios conforme o dia e barbeiro selecionados no filtro. Ao remover um bloqueio, o período volta a ficar disponível se estiver dentro do expediente e sem reserva ativa.
+          Exibindo somente os bloqueios futuros do dia selecionado no filtro. Ao remover um bloqueio, o período volta a ficar disponível se estiver dentro do expediente e sem reserva ativa.
         </CardDescription>
 
         <div className="mt-4 grid gap-3 sm:mt-5">

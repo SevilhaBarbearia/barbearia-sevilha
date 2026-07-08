@@ -171,6 +171,8 @@ type BloqueioHorarioFormProps = {
 };
 
 export function BloqueioHorarioForm({ barbeiros }: BloqueioHorarioFormProps) {
+  const hoje = new Date().toISOString().slice(0, 10);
+
   return (
     <form action={asFormAction(criarBloqueioHorario)} className="grid gap-4">
       <div>
@@ -185,15 +187,24 @@ export function BloqueioHorarioForm({ barbeiros }: BloqueioHorarioFormProps) {
         </Select>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      {/*
+        Bloqueio separado por dia + horários para simplificar a operação.
+        A action monta start_at/end_at no servidor, mantendo compatibilidade com o banco.
+      */}
+      <div className="grid gap-4 md:grid-cols-[1.2fr_1fr_1fr]">
         <div>
-          <Label htmlFor="bloqueio-inicio">Início do bloqueio</Label>
-          <Input id="bloqueio-inicio" name="start_at" type="datetime-local" required />
+          <Label htmlFor="bloqueio-data">Dia do bloqueio</Label>
+          <Input id="bloqueio-data" name="block_date" type="date" defaultValue={hoje} required />
         </div>
 
         <div>
-          <Label htmlFor="bloqueio-fim">Fim do bloqueio</Label>
-          <Input id="bloqueio-fim" name="end_at" type="datetime-local" required />
+          <Label htmlFor="bloqueio-inicio">Início</Label>
+          <Input id="bloqueio-inicio" name="block_start_time" type="time" defaultValue="08:00" required />
+        </div>
+
+        <div>
+          <Label htmlFor="bloqueio-fim">Fim</Label>
+          <Input id="bloqueio-fim" name="block_end_time" type="time" defaultValue="18:00" required />
         </div>
       </div>
 

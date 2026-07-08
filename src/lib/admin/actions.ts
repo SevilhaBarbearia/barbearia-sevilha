@@ -342,10 +342,24 @@ export async function criarBloqueioHorario(formData: FormData): Promise<ActionRe
   const { user } = await exigirAdmin();
   const supabase = await createClient();
 
+  const dataBloqueio = String(formData.get('block_date') ?? '').trim();
+  const inicioBloqueio = String(formData.get('block_start_time') ?? '').trim();
+  const fimBloqueio = String(formData.get('block_end_time') ?? '').trim();
+
+  // Novo formulário envia dia + horários separados para melhorar a usabilidade.
+  // Mantemos fallback para start_at/end_at para não quebrar versões antigas do formulário.
+  const startAt = dataBloqueio && inicioBloqueio
+    ? `${dataBloqueio}T${inicioBloqueio}`
+    : formData.get('start_at');
+
+  const endAt = dataBloqueio && fimBloqueio
+    ? `${dataBloqueio}T${fimBloqueio}`
+    : formData.get('end_at');
+
   const parsed = bloqueioHorarioSchema.safeParse({
     barber_id: formData.get('barber_id'),
-    start_at: formData.get('start_at'),
-    end_at: formData.get('end_at'),
+    start_at: startAt,
+    end_at: endAt,
     reason: formData.get('reason')
   });
 
