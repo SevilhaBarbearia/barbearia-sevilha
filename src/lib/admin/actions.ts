@@ -31,6 +31,39 @@ function revalidarAdminAgenda() {
   revalidatePath('/admin/horarios');
 }
 
+
+type ExpedienteBase = {
+  start_time: string;
+  end_time: string;
+  break_start: string | null;
+  break_end: string | null;
+  is_active: boolean;
+};
+
+async function substituirExpedienteSemanal(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  barberId: string,
+  expediente: ExpedienteBase
+) {
+  // Internamente o banco continua usando business_hours por dia da semana.
+  // A interface não exibe mais um card por dia; esta função aplica o mesmo expediente para todos os dias.
+  const registros = Array.from({ length: 7 }, (_, dayOfWeek) => ({
+    barber_id: barberId,
+    day_of_week: dayOfWeek,
+    start_time: expediente.start_time,
+    end_time: expediente.end_time,
+    break_start: expediente.break_start,
+    break_end: expediente.break_end,
+    is_active: expediente.is_active
+  }));
+
+  const { error: deleteError } = await supabase.from('business_hours').delete().eq('barber_id', barberId);
+  if (deleteError) return deleteError;
+
+  const { error: insertError } = await supabase.from('business_hours').insert(registros);
+  return insertError;
+}
+
 export async function criarServico(formData: FormData): Promise<ActionResult> {
   await exigirAdmin();
   const supabase = await createClient();
@@ -159,6 +192,18 @@ export async function criarBarbeiro(formData: FormData): Promise<ActionResult> {
     }
   }
 
+  const expedienteError = await substituirExpedienteSemanal(supabase, data.id, {
+    start_time: '09:00',
+    end_time: '18:00',
+    break_start: '12:00',
+    break_end: '13:00',
+    is_active: true
+  });
+
+  if (expedienteError) {
+    return { ok: false, mensagem: `Barbeiro criado, mas não foi possível aplicar o expediente padrão: ${expedienteError.message}` };
+  }
+
   revalidatePath('/');
   revalidatePath('/reservar');
   revalidatePath('/admin/barbeiros');
@@ -242,6 +287,42 @@ export async function alternarStatusBarbeiro(formData: FormData): Promise<Action
   revalidatePath('/admin/horarios');
 
   return { ok: true, mensagem: isActive ? 'Barbeiro ativado.' : 'Barbeiro desativado.' };
+}
+
+
+export async function aplicarExpedientePadraoBarbeiro(formData: FormData): Promise<ActionResult> {
+  await exigirAdmin();
+  const supabase = await createClient();
+
+  const parsed = horarioAtendimentoSchema.safeParse({
+    barber_id: formData.get('barber_id'),
+    day_of_week: 1,
+    start_time: formData.get('start_time'),
+    end_time: formData.get('end_time'),
+    break_start: formData.get('break_start'),
+    break_end: formData.get('break_end'),
+    is_active: checkboxAtivo(formData)
+  });
+
+  if (!parsed.success) {
+    return { ok: false, mensagem: primeiroErro(parsed.error.issues[0]?.message, 'Dados inválidos para o expediente padrão.') };
+  }
+
+  const error = await substituirExpedienteSemanal(supabase, parsed.data.barber_id, {
+    start_time: parsed.data.start_time,
+    end_time: parsed.data.end_time,
+    break_start: parsed.data.break_start,
+    break_end: parsed.data.break_end,
+    is_active: parsed.data.is_active
+  });
+
+  if (error) {
+    return { ok: false, mensagem: `Não foi possível aplicar o expediente padrão: ${error.message}` };
+  }
+
+  revalidarAdminAgenda();
+
+  return { ok: true, mensagem: 'Expediente padrão aplicado para todos os dias do barbeiro.' };
 }
 
 export async function criarHorarioAtendimento(formData: FormData): Promise<ActionResult> {

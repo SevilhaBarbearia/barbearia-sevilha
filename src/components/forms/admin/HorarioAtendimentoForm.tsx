@@ -1,5 +1,6 @@
 import {
   alternarStatusHorarioAtendimento,
+  aplicarExpedientePadraoBarbeiro,
   atualizarHorarioAtendimento,
   criarBloqueioHorario,
   criarHorarioAtendimento,
@@ -39,6 +40,69 @@ function formatarDateTimeLocal(valorISO?: string | null) {
 
 function limparHora(hora?: string | null) {
   return hora ? hora.slice(0, 5) : '';
+}
+
+
+export function ExpedientePadraoForm({ barbeiros }: { barbeiros: Barber[] }) {
+  return (
+    <form action={asFormAction(aplicarExpedientePadraoBarbeiro)} className="grid gap-4">
+      <div>
+        <Label htmlFor="expediente-padrao-barbeiro">Barbeiro</Label>
+        <Select
+          id="expediente-padrao-barbeiro"
+          name="barber_id"
+          defaultValue={barbeiros[0]?.id ?? ''}
+          required
+          disabled={barbeiros.length === 0}
+        >
+          {barbeiros.length === 0 && <option value="">Cadastre um barbeiro primeiro</option>}
+          {barbeiros.map((barbeiro) => (
+            <option key={barbeiro.id} value={barbeiro.id}>
+              {barbeiro.name}
+            </option>
+          ))}
+        </Select>
+      </div>
+
+      {/*
+        O usuário não precisa gerenciar cards por dia da semana.
+        Este formulário aplica o mesmo expediente para todos os dias internamente.
+      */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <div>
+          <Label htmlFor="expediente-padrao-inicio">Início</Label>
+          <Input id="expediente-padrao-inicio" name="start_time" type="time" defaultValue="09:00" required />
+        </div>
+
+        <div>
+          <Label htmlFor="expediente-padrao-fim">Fim</Label>
+          <Input id="expediente-padrao-fim" name="end_time" type="time" defaultValue="18:00" required />
+        </div>
+
+        <div>
+          <Label htmlFor="expediente-padrao-pausa-inicio">Início da pausa</Label>
+          <Input id="expediente-padrao-pausa-inicio" name="break_start" type="time" defaultValue="12:00" />
+        </div>
+
+        <div>
+          <Label htmlFor="expediente-padrao-pausa-fim">Fim da pausa</Label>
+          <Input id="expediente-padrao-pausa-fim" name="break_end" type="time" defaultValue="13:00" />
+        </div>
+      </div>
+
+      <label className="flex items-center gap-3 text-sm text-zinc-200">
+        <input
+          type="checkbox"
+          name="is_active"
+          defaultChecked
+          className="h-4 w-4 rounded border-white/20 bg-zinc-900"
+        />
+        Expediente padrão ativo para reservas
+      </label>
+
+      <BotaoSubmit texto="Aplicar expediente padrão" disabled={barbeiros.length === 0} />
+    </form>
+  );
 }
 
 export function HorarioAtendimentoForm({ barbeiros, horario }: HorarioAtendimentoFormProps) {

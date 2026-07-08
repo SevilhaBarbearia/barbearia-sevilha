@@ -133,7 +133,7 @@ export function Select({
         required={required}
         disabled={disabled}
         onChange={() => undefined}
-        className="sr-only"
+        className="hidden"
       >
         {children}
       </select>
