@@ -12,6 +12,7 @@ import {
 import type {
   ChangeEvent,
   InputHTMLAttributes,
+  KeyboardEvent,
   LabelHTMLAttributes,
   SelectHTMLAttributes,
   TextareaHTMLAttributes
@@ -52,9 +53,11 @@ function extrairOpcoes(children: SelectHTMLAttributes<HTMLSelectElement>['childr
 }
 
 /**
- * Select visual customizado.
- * Mantém um <select> oculto com name/value para preservar submissão nativa dos formulários
- * e evita o menu padrão do navegador, que ficava visualmente inconsistente na Vercel/Chrome.
+ * Select visual 100% customizado.
+ *
+ * Motivo: o menu nativo do navegador ficava diferente entre localhost/Vercel e quebrava
+ * a identidade premium da interface. Este componente remove o <select> visível e usa
+ * um input hidden para preservar o envio normal dos formulários/server actions.
  */
 export function Select({
   children,
@@ -73,15 +76,20 @@ export function Select({
   const containerRef = useRef<HTMLDivElement>(null);
   const options = useMemo(() => extrairOpcoes(children), [children]);
   const isControlled = value !== undefined;
-  const valorInicial = String(value ?? defaultValue ?? options[0]?.value ?? '');
+  const valorInicial = String(value ?? defaultValue ?? options.find((option) => !option.disabled)?.value ?? '');
   const [internalValue, setInternalValue] = useState(valorInicial);
   const [open, setOpen] = useState(false);
+
   const selectedValue = String(isControlled ? value : internalValue);
-  const selectedOption = options.find((option) => option.value === selectedValue) ?? options[0];
+  const selectedOption =
+    options.find((option) => option.value === selectedValue) ??
+    options.find((option) => !option.disabled) ??
+    options[0];
 
   useEffect(() => {
     if (!isControlled && options.length > 0 && !options.some((option) => option.value === internalValue)) {
-      setInternalValue(options[0].value);
+      const primeiraOpcaoValida = options.find((option) => !option.disabled) ?? options[0];
+      setInternalValue(primeiraOpcaoValida?.value ?? '');
     }
   }, [internalValue, isControlled, options]);
 
@@ -92,7 +100,7 @@ export function Select({
       }
     }
 
-    function handleEscape(event: KeyboardEvent) {
+    function handleEscape(event: globalThis.KeyboardEvent) {
       if (event.key === 'Escape') {
         setOpen(false);
       }
@@ -107,6 +115,13 @@ export function Select({
     };
   }, []);
 
+  function dispararOnChange(option: OpcaoSelect) {
+    onChange?.({
+      target: { value: option.value, name },
+      currentTarget: { value: option.value, name }
+    } as ChangeEvent<HTMLSelectElement>);
+  }
+
   function selecionarOpcao(option: OpcaoSelect) {
     if (option.disabled || disabled) return;
 
@@ -114,31 +129,49 @@ export function Select({
       setInternalValue(option.value);
     }
 
-    onChange?.({
-      target: { value: option.value, name },
-      currentTarget: { value: option.value, name }
-    } as ChangeEvent<HTMLSelectElement>);
-
+    dispararOnChange(option);
     setOpen(false);
   }
 
+  function navegarTeclado(event: KeyboardEvent<HTMLButtonElement>) {
+    if (disabled) return;
+
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      setOpen((atual) => !atual);
+      return;
+    }
+
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+
+    event.preventDefault();
+    const opcoesValidas = options.filter((option) => !option.disabled);
+    const indiceAtual = Math.max(0, opcoesValidas.findIndex((option) => option.value === selectedOption?.value));
+    const proximoIndice = event.key === 'ArrowDown'
+      ? Math.min(opcoesValidas.length - 1, indiceAtual + 1)
+      : Math.max(0, indiceAtual - 1);
+
+    const proximaOpcao = opcoesValidas[proximoIndice];
+    if (proximaOpcao) selecionarOpcao(proximaOpcao);
+  }
+
+  const valorParaFormulario = selectedOption?.value ?? '';
+
   return (
     <div ref={containerRef} className="relative">
-      <select
-        {...props}
-        aria-hidden="true"
-        tabIndex={-1}
-        name={name}
-        value={selectedOption?.value ?? ''}
-        required={required}
-        disabled={disabled}
-        onChange={() => undefined}
-        className="hidden"
-      >
-        {children}
-      </select>
+      {name && (
+        <input
+          type="hidden"
+          name={name}
+          value={valorParaFormulario}
+          disabled={disabled}
+          data-required={required ? 'true' : undefined}
+          readOnly
+        />
+      )}
 
       <button
+        {...props}
         id={buttonId}
         type="button"
         disabled={disabled}
@@ -146,28 +179,29 @@ export function Select({
         aria-expanded={open}
         className={cn(
           campoBase,
-          'flex min-h-11 cursor-pointer items-center justify-between gap-3 bg-zinc-950/92 pr-3 text-left hover:border-brand-500/70 hover:bg-black/55 disabled:pointer-events-none',
+          'group flex min-h-11 cursor-pointer items-center justify-between gap-3 bg-zinc-950/92 pr-3 text-left hover:border-brand-500/70 hover:bg-black/55 disabled:pointer-events-none',
           open && 'border-brand-500 bg-black/55 ring-4 ring-brand-500/15',
           className
         )}
         onClick={() => setOpen((atual) => !atual)}
+        onKeyDown={navegarTeclado}
       >
         <span className="min-w-0 truncate">{selectedOption?.label || 'Selecione uma opção'}</span>
-        <span className={cn('shrink-0 text-brand-100 transition', open && 'rotate-180')}>⌄</span>
+        <span className={cn('shrink-0 text-brand-100 transition-transform duration-200', open && 'rotate-180')}>⌄</span>
       </button>
 
       {open && (
         <div
           role="listbox"
           aria-labelledby={buttonId}
-          className="absolute left-0 right-0 top-[calc(100%+0.45rem)] z-50 max-h-72 overflow-auto rounded-2xl border border-brand-500/30 bg-zinc-950 p-1.5 shadow-2xl shadow-black/70 ring-1 ring-white/10"
+          className="select-menu-anim absolute left-0 right-0 top-[calc(100%+0.45rem)] z-[80] max-h-72 overflow-auto rounded-2xl border border-brand-500/30 bg-zinc-950/98 p-1.5 shadow-2xl shadow-black/70 ring-1 ring-white/10 backdrop-blur-xl"
         >
           {options.map((option) => {
-            const selected = option.value === selectedValue;
+            const selected = option.value === valorParaFormulario;
 
             return (
               <button
-                key={option.value}
+                key={`${option.value}-${option.label}`}
                 type="button"
                 role="option"
                 aria-selected={selected}

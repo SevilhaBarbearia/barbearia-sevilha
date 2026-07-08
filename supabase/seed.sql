@@ -18,5 +18,5 @@ on conflict do nothing;
 insert into public.business_hours (barber_id, day_of_week, start_time, end_time, break_start, break_end, is_active)
 select b.id, d.day, '09:00', '18:00', '12:00', '13:00', true
 from public.barbers b
-cross join (values (0),(1),(2),(3),(4),(5),(6)) as d(day)
+cross join (values (1),(2),(3),(4),(5),(6)) as d(day)
 on conflict do nothing;

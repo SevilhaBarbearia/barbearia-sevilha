@@ -46,8 +46,10 @@ async function substituirExpedienteSemanal(
   expediente: ExpedienteBase
 ) {
   // Internamente o banco continua usando business_hours por dia da semana.
-  // A interface não exibe mais um card por dia; esta função aplica o mesmo expediente para todos os dias.
-  const registros = Array.from({ length: 7 }, (_, dayOfWeek) => ({
+  // Regra operacional: barbeiro ativo trabalha de segunda a sábado.
+  // Domingo não recebe expediente por padrão e só deve abrir se a barbearia decidir futuramente.
+  const diasUteisDaBarbearia = [1, 2, 3, 4, 5, 6];
+  const registros = diasUteisDaBarbearia.map((dayOfWeek) => ({
     barber_id: barberId,
     day_of_week: dayOfWeek,
     start_time: expediente.start_time,
@@ -322,7 +324,7 @@ export async function aplicarExpedientePadraoBarbeiro(formData: FormData): Promi
 
   revalidarAdminAgenda();
 
-  return { ok: true, mensagem: 'Expediente padrão aplicado para todos os dias do barbeiro.' };
+  return { ok: true, mensagem: 'Expediente padrão aplicado de segunda a sábado.' };
 }
 
 export async function criarHorarioAtendimento(formData: FormData): Promise<ActionResult> {

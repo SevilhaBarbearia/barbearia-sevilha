@@ -1,15 +1,11 @@
-import { CalendarX2, Clock3, Search, ShieldCheck, SlidersHorizontal } from 'lucide-react';
+import { CalendarX2, Clock3, Search, ShieldCheck } from 'lucide-react';
 import { format } from 'date-fns';
 import { Badge } from '@/components/ui/Badge';
 import { Button, ButtonLink } from '@/components/ui/Button';
 import { Card, CardDescription, CardTitle } from '@/components/ui/Card';
 import { Input, Label, Select } from '@/components/ui/Input';
 import { createClient } from '@/lib/supabase/server';
-import {
-  BloqueioHorarioForm,
-  ExcluirBloqueioForm,
-  ExpedientePadraoForm
-} from '@/components/forms/admin/HorarioAtendimentoForm';
+import { BloqueioHorarioForm, ExcluirBloqueioForm } from '@/components/forms/admin/HorarioAtendimentoForm';
 import type { Barber, BlockedSlot } from '@/lib/db/types';
 
 export const dynamic = 'force-dynamic';
@@ -76,7 +72,7 @@ export default async function HorariosAdminPage({ searchParams }: PageProps) {
         <Badge><Clock3 className="h-3.5 w-3.5" /> Agenda operacional</Badge>
         <h1 className="mt-3 text-2xl font-black tracking-tight text-white sm:text-3xl lg:text-4xl">Horários e bloqueios</h1>
         <p className="mt-2 max-w-3xl text-zinc-300">
-          A agenda considera que barbeiros ativos trabalham todos os dias no expediente padrão. A tela mostra apenas bloqueios cadastrados para manter a operação limpa.
+          Barbeiros ativos já ficam disponíveis de segunda a sábado no expediente padrão. Esta tela mostra somente bloqueios cadastrados, mantendo o painel limpo.
         </p>
       </div>
 
@@ -89,50 +85,22 @@ export default async function HorariosAdminPage({ searchParams }: PageProps) {
         </Card>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
-        <Card className="bg-gradient-to-br from-white/[0.08] to-brand-500/[0.08]">
-          <div className="flex items-start gap-4">
-            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-brand-500 text-brand-950 shadow-button">
-              <SlidersHorizontal className="h-5 w-5" />
-            </span>
-            <div>
-              <CardTitle>Expediente padrão</CardTitle>
-              <CardDescription>
-                Use apenas quando precisar alterar o horário geral de um barbeiro. Não exibimos mais um card por dia da semana.
-              </CardDescription>
-            </div>
+      <Card className="bg-gradient-to-br from-white/[0.08] to-red-500/[0.08]">
+        <div className="flex items-start gap-4">
+          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-red-500 text-white shadow-lg shadow-red-950/20">
+            <CalendarX2 className="h-5 w-5" />
+          </span>
+          <div>
+            <CardTitle>Novo bloqueio de horário</CardTitle>
+            <CardDescription>
+              Use bloqueios para folgas, compromissos, manutenção ou intervalos em que o barbeiro não deve receber reservas.
+            </CardDescription>
           </div>
-
-          <details className="mt-5 rounded-2xl border border-white/10 bg-black/18 p-4">
-            <summary className="cursor-pointer list-none text-sm font-black uppercase tracking-[0.18em] text-brand-100">
-              Configurar expediente geral
-            </summary>
-            <p className="mt-3 text-sm leading-6 text-zinc-300">
-              Ao salvar, o mesmo expediente será aplicado internamente para todos os dias. O cliente continuará vendo horários disponíveis normalmente.
-            </p>
-            <div className="mt-5">
-              <ExpedientePadraoForm barbeiros={barbeiros} />
-            </div>
-          </details>
-        </Card>
-
-        <Card className="bg-gradient-to-br from-white/[0.08] to-red-500/[0.08]">
-          <div className="flex items-start gap-4">
-            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-red-500 text-white shadow-lg shadow-red-950/20">
-              <CalendarX2 className="h-5 w-5" />
-            </span>
-            <div>
-              <CardTitle>Novo bloqueio específico</CardTitle>
-              <CardDescription>
-                Bloqueie folgas, horários pessoais, manutenção ou qualquer intervalo em que o barbeiro não deve receber reservas.
-              </CardDescription>
-            </div>
-          </div>
-          <div className="mt-6">
-            <BloqueioHorarioForm barbeiros={barbeiros} />
-          </div>
-        </Card>
-      </div>
+        </div>
+        <div className="mt-6">
+          <BloqueioHorarioForm barbeiros={barbeiros} />
+        </div>
+      </Card>
 
       <Card className="border-brand-500/20 bg-brand-500/[0.07]">
         <form className="grid gap-4 lg:grid-cols-[1fr_1fr_auto_auto] lg:items-end">
@@ -166,7 +134,7 @@ export default async function HorariosAdminPage({ searchParams }: PageProps) {
           <div>
             <CardTitle>Bloqueios cadastrados</CardTitle>
             <CardDescription>
-              Mostrando apenas os bloqueios do dia selecionado. Se não houver bloqueio, a agenda usa o expediente padrão do barbeiro.
+              Se não houver bloqueio no dia selecionado, a agenda permanece livre conforme o expediente padrão de segunda a sábado.
             </CardDescription>
           </div>
           <Badge><ShieldCheck className="h-3.5 w-3.5" /> Protegido por RLS</Badge>

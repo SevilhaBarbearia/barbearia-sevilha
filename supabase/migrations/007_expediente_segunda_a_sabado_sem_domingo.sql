@@ -1,8 +1,12 @@
--- 006_expediente_padrao_todos_os_dias.sql
--- Mantido por compatibilidade de nome, mas a regra atual da Sevilha é:
--- barbeiros ativos possuem expediente padrão de segunda a sábado.
--- Domingo fica sem expediente, salvo futura configuração manual.
+-- 007_expediente_segunda_a_sabado_sem_domingo.sql
+-- Ajuste operacional solicitado: ao cadastrar barbeiro, ele fica disponível de segunda a sábado.
+-- Domingo não deve abrir horários por padrão.
 
+-- Remove expediente de domingo criado por versões anteriores do projeto.
+delete from public.business_hours
+where day_of_week = 0;
+
+-- Garante que todos os barbeiros existentes tenham expediente interno de segunda a sábado.
 with base as (
   select distinct on (b.id)
     b.id as barber_id,
