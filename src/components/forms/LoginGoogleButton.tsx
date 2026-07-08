@@ -3,10 +3,17 @@
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/Button';
 
+function obterOrigemAtual() {
+  // Em produção, usar window.location.origin evita que um valor antigo da Vercel
+  // ou do .env local faça o OAuth voltar para http://localhost:3000.
+  if (typeof window !== 'undefined') return window.location.origin;
+  return process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '') ?? 'http://localhost:3000';
+}
+
 export function LoginGoogleButton() {
   async function entrarComGoogle() {
     const supabase = createClient();
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? window.location.origin;
+    const siteUrl = obterOrigemAtual();
 
     await supabase.auth.signInWithOAuth({
       provider: 'google',
