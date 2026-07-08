@@ -1,6 +1,7 @@
+import { Clock3 } from 'lucide-react';
 import { criarBarbeiro, atualizarBarbeiro, alternarStatusBarbeiro } from '@/lib/admin/actions';
 import { asFormAction } from '@/lib/actions/form-action';
-import type { Barber, Service } from '@/lib/db/types';
+import type { Barber, BusinessHour, Service } from '@/lib/db/types';
 import { BotaoSubmit } from '@/components/forms/BotaoSubmit';
 import { Button } from '@/components/ui/Button';
 import { Input, Label, Textarea } from '@/components/ui/Input';
@@ -12,9 +13,14 @@ type BarbeiroComServicos = Barber & {
 type BarbeiroAdminFormProps = {
   barbeiro?: BarbeiroComServicos;
   servicos: Service[];
+  horarioPadrao?: BusinessHour | null;
 };
 
-export function BarbeiroAdminForm({ barbeiro, servicos }: BarbeiroAdminFormProps) {
+function limparHora(hora?: string | null) {
+  return hora ? hora.slice(0, 5) : '';
+}
+
+export function BarbeiroAdminForm({ barbeiro, servicos, horarioPadrao }: BarbeiroAdminFormProps) {
   const editando = Boolean(barbeiro?.id);
   const action = asFormAction(editando ? atualizarBarbeiro : criarBarbeiro);
   const servicosVinculados = new Set(
@@ -70,6 +76,64 @@ export function BarbeiroAdminForm({ barbeiro, servicos }: BarbeiroAdminFormProps
           placeholder="Especialidade, experiência e estilo de atendimento."
           rows={3}
         />
+      </div>
+
+      <div className="rounded-2xl border border-brand-500/20 bg-brand-500/[0.06] p-4 sm:rounded-[1.5rem] sm:p-5">
+        <div className="mb-4 flex items-start gap-3">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-brand-500/20 text-brand-100">
+            <Clock3 className="h-5 w-5" />
+          </span>
+          <div>
+            <p className="text-sm font-black text-white">Expediente do barbeiro</p>
+            <p className="mt-1 text-sm leading-6 text-zinc-300">
+              Este horário será aplicado internamente de segunda a sábado. Domingo fica fechado por padrão.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-4">
+          <div>
+            <Label htmlFor={`start-${barbeiro?.id ?? 'novo'}`}>Início</Label>
+            <Input
+              id={`start-${barbeiro?.id ?? 'novo'}`}
+              name="start_time"
+              type="time"
+              defaultValue={limparHora(horarioPadrao?.start_time) || '09:00'}
+              required
+            />
+          </div>
+
+          <div>
+            <Label htmlFor={`end-${barbeiro?.id ?? 'novo'}`}>Fim</Label>
+            <Input
+              id={`end-${barbeiro?.id ?? 'novo'}`}
+              name="end_time"
+              type="time"
+              defaultValue={limparHora(horarioPadrao?.end_time) || '18:00'}
+              required
+            />
+          </div>
+
+          <div>
+            <Label htmlFor={`break-start-${barbeiro?.id ?? 'novo'}`}>Início do intervalo</Label>
+            <Input
+              id={`break-start-${barbeiro?.id ?? 'novo'}`}
+              name="break_start"
+              type="time"
+              defaultValue={limparHora(horarioPadrao?.break_start) || '12:00'}
+            />
+          </div>
+
+          <div>
+            <Label htmlFor={`break-end-${barbeiro?.id ?? 'novo'}`}>Fim do intervalo</Label>
+            <Input
+              id={`break-end-${barbeiro?.id ?? 'novo'}`}
+              name="break_end"
+              type="time"
+              defaultValue={limparHora(horarioPadrao?.break_end) || '13:00'}
+            />
+          </div>
+        </div>
       </div>
 
       <div>

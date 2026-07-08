@@ -45,21 +45,70 @@ export const servicoAdminSchema = z.object({
   is_active: z.boolean().default(true)
 });
 
-export const barbeiroAdminSchema = z.object({
-  id: z.string().uuid('Barbeiro inválido.').optional(),
-  name: z.string().trim().min(2, 'Informe o nome do barbeiro.'),
-  bio: z.preprocess(limparTextoOpcional, z.string().max(700).nullable()),
-  photo_url: z.preprocess(
-    limparUrlOpcional,
-    z.string().url('Informe uma URL válida para a foto.').nullable()
-  ),
-  phone: z.preprocess(
-    normalizarTelefoneOpcional,
-    z.string().regex(telefoneOpcionalRegex, 'Informe um telefone válido com DDD.').nullable()
-  ),
-  is_active: z.boolean().default(true),
-  service_ids: z.array(z.string().uuid()).default([])
-});
+export const barbeiroAdminSchema = z
+  .object({
+    id: z.string().uuid('Barbeiro inválido.').optional(),
+    name: z.string().trim().min(2, 'Informe o nome do barbeiro.'),
+    bio: z.preprocess(limparTextoOpcional, z.string().max(700).nullable()),
+    photo_url: z.preprocess(
+      limparUrlOpcional,
+      z.string().url('Informe uma URL válida para a foto.').nullable()
+    ),
+    phone: z.preprocess(
+      normalizarTelefoneOpcional,
+      z.string().regex(telefoneOpcionalRegex, 'Informe um telefone válido com DDD.').nullable()
+    ),
+    // Expediente padrão do barbeiro: aplicado internamente de segunda a sábado.
+    // Domingo permanece fechado por padrão e deve ser tratado por regra futura específica.
+    start_time: z.string().regex(horaRegex, 'Informe um horário inicial válido.'),
+    end_time: z.string().regex(horaRegex, 'Informe um horário final válido.'),
+    break_start: z.preprocess(limparHoraOpcional, z.string().regex(horaRegex, 'Informe um início de pausa válido.').nullable()),
+    break_end: z.preprocess(limparHoraOpcional, z.string().regex(horaRegex, 'Informe um fim de pausa válido.').nullable()),
+    is_active: z.boolean().default(true),
+    service_ids: z.array(z.string().uuid()).default([])
+  })
+  .superRefine((dados, ctx) => {
+    const inicio = minutosDaHora(dados.start_time);
+    const fim = minutosDaHora(dados.end_time);
+
+    if (fim <= inicio) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['end_time'],
+        message: 'O horário final precisa ser maior que o horário inicial.'
+      });
+    }
+
+    const informouApenasUmaPausa = Boolean(dados.break_start) !== Boolean(dados.break_end);
+    if (informouApenasUmaPausa) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['break_start'],
+        message: 'Informe início e fim da pausa ou deixe os dois campos vazios.'
+      });
+    }
+
+    if (dados.break_start && dados.break_end) {
+      const inicioPausa = minutosDaHora(dados.break_start);
+      const fimPausa = minutosDaHora(dados.break_end);
+
+      if (fimPausa <= inicioPausa) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['break_end'],
+          message: 'O fim da pausa precisa ser maior que o início da pausa.'
+        });
+      }
+
+      if (inicioPausa < inicio || fimPausa > fim) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['break_start'],
+          message: 'A pausa precisa ficar dentro do expediente informado.'
+        });
+      }
+    }
+  });
 
 export const horarioAtendimentoSchema = z
   .object({

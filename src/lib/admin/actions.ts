@@ -161,6 +161,10 @@ export async function criarBarbeiro(formData: FormData): Promise<ActionResult> {
     bio: formData.get('bio'),
     photo_url: formData.get('photo_url'),
     phone: formData.get('phone'),
+    start_time: formData.get('start_time') || '09:00',
+    end_time: formData.get('end_time') || '18:00',
+    break_start: formData.get('break_start'),
+    break_end: formData.get('break_end'),
     is_active: checkboxAtivo(formData),
     service_ids: serviceIds
   });
@@ -169,7 +173,7 @@ export async function criarBarbeiro(formData: FormData): Promise<ActionResult> {
     return { ok: false, mensagem: primeiroErro(parsed.error.issues[0]?.message, 'Dados inválidos.') };
   }
 
-  const { service_ids, ...barbeiro } = parsed.data;
+  const { service_ids, start_time, end_time, break_start, break_end, ...barbeiro } = parsed.data;
   const { data, error } = await supabase
     .from('barbers')
     .insert(barbeiro)
@@ -195,10 +199,10 @@ export async function criarBarbeiro(formData: FormData): Promise<ActionResult> {
   }
 
   const expedienteError = await substituirExpedienteSemanal(supabase, data.id, {
-    start_time: '09:00',
-    end_time: '18:00',
-    break_start: '12:00',
-    break_end: '13:00',
+    start_time,
+    end_time,
+    break_start,
+    break_end,
     is_active: true
   });
 
@@ -225,6 +229,10 @@ export async function atualizarBarbeiro(formData: FormData): Promise<ActionResul
     bio: formData.get('bio'),
     photo_url: formData.get('photo_url'),
     phone: formData.get('phone'),
+    start_time: formData.get('start_time') || '09:00',
+    end_time: formData.get('end_time') || '18:00',
+    break_start: formData.get('break_start'),
+    break_end: formData.get('break_end'),
     is_active: checkboxAtivo(formData),
     service_ids: serviceIds
   });
@@ -233,7 +241,7 @@ export async function atualizarBarbeiro(formData: FormData): Promise<ActionResul
     return { ok: false, mensagem: primeiroErro(parsed.error?.issues[0]?.message, 'Barbeiro inválido.') };
   }
 
-  const { id, service_ids, ...barbeiro } = parsed.data;
+  const { id, service_ids, start_time, end_time, break_start, break_end, ...barbeiro } = parsed.data;
   const { error } = await supabase.from('barbers').update(barbeiro).eq('id', id);
 
   if (error) {
@@ -257,6 +265,18 @@ export async function atualizarBarbeiro(formData: FormData): Promise<ActionResul
     if (vinculoError) {
       return { ok: false, mensagem: `Barbeiro atualizado, mas houve erro ao vincular serviços: ${vinculoError.message}` };
     }
+  }
+
+  const expedienteError = await substituirExpedienteSemanal(supabase, id, {
+    start_time,
+    end_time,
+    break_start,
+    break_end,
+    is_active: true
+  });
+
+  if (expedienteError) {
+    return { ok: false, mensagem: `Barbeiro atualizado, mas não foi possível atualizar o expediente: ${expedienteError.message}` };
   }
 
   revalidatePath('/');
