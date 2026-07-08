@@ -8,6 +8,9 @@ import { Card, CardDescription, CardTitle } from '@/components/ui/Card';
 import { obterUsuarioAtual } from '@/lib/auth/permissoes';
 import { createClient } from '@/lib/supabase/server';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export default async function ReservarPage() {
   const { user, profile } = await obterUsuarioAtual();
   if (!user) redirect('/login');

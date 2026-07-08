@@ -27,7 +27,7 @@ export function Logo({ href = '/', compact = false, className }: LogoProps) {
       {!compact && (
         <span className="min-w-0 leading-tight">
           <span className="block whitespace-nowrap text-sm font-black tracking-tight text-white sm:text-base">Sevilha Barbearia</span>
-          <span className="block whitespace-nowrap text-[9px] font-semibold uppercase tracking-[0.20em] text-brand-100/75 sm:text-[11px] sm:tracking-[0.24em]">agenda premium</span>
+          <span className="block whitespace-nowrap text-[9px] font-semibold uppercase tracking-[0.20em] text-brand-100/75 sm:text-[11px] sm:tracking-[0.24em]">Agenda</span>
         </span>
       )}
     </Link>

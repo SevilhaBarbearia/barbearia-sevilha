@@ -7,6 +7,9 @@ import { Card, CardDescription, CardTitle } from '@/components/ui/Card';
 import { createClient } from '@/lib/supabase/server';
 import { formatarMoeda } from '@/lib/utils';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 
 const beneficios: Array<{ icone: LucideIcon; titulo: string; texto: string }> = [
   { icone: Clock3, titulo: 'Sem espera no WhatsApp', texto: 'O cliente vê horários reais e reserva sozinho.' },
@@ -159,6 +162,15 @@ export default async function HomePage() {
               </div>
             </Card>
           ))}
+
+          {(services?.length ?? 0) === 0 && (
+            <Card className="md:col-span-3 border-yellow-500/30 bg-yellow-500/10">
+              <CardTitle>Nenhum serviço ativo encontrado</CardTitle>
+              <CardDescription>
+                Cadastre e ative os serviços no painel administrativo. Se localmente aparece e na Vercel não, confira as variáveis do Supabase configuradas na Vercel.
+              </CardDescription>
+            </Card>
+          )}
         </div>
       </section>
 
@@ -188,6 +200,15 @@ export default async function HomePage() {
               </div>
             </Card>
           ))}
+
+          {(barbers?.length ?? 0) === 0 && (
+            <Card className="md:col-span-3 border-yellow-500/30 bg-yellow-500/10">
+              <CardTitle>Nenhum barbeiro ativo encontrado</CardTitle>
+              <CardDescription>
+                Cadastre e ative barbeiros no painel administrativo. Para aparecerem na reserva, vincule também os serviços realizados por cada barbeiro.
+              </CardDescription>
+            </Card>
+          )}
         </div>
       </section>
 
