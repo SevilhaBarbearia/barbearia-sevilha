@@ -1,3 +1,4 @@
+import { exigirAdmin } from '@/lib/auth/permissoes';
 import { format } from 'date-fns';
 import { Card, CardDescription, CardTitle } from '@/components/ui/Card';
 import { createClient } from '@/lib/supabase/server';
@@ -5,6 +6,7 @@ import { PagamentoPresencialForm } from '@/components/forms/PagamentoPresencialF
 import { formatarMoeda } from '@/lib/utils';
 
 export default async function ReservasAdminPage() {
+  await exigirAdmin();
   const supabase = await createClient();
   const { data } = await supabase
     .from('appointments')

@@ -1,6 +1,8 @@
+import { exigirAdmin } from '@/lib/auth/permissoes';
 import { Card, CardDescription, CardTitle } from '@/components/ui/Card';
 
-export default function Page() {
+export default async function Page() {
+  await exigirAdmin();
   return (
     <Card>
       <CardTitle>Configurações da barbearia</CardTitle>

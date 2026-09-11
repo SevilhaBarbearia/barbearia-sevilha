@@ -1,9 +1,11 @@
+import { exigirAdmin } from '@/lib/auth/permissoes';
 import { endOfDay, format, startOfDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Card, CardDescription, CardTitle } from '@/components/ui/Card';
 import { createClient } from '@/lib/supabase/server';
 
 export default async function AgendaDiaPage() {
+  await exigirAdmin();
   const supabase = await createClient();
   const { data } = await supabase
     .from('appointments')

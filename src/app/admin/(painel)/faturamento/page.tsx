@@ -1,8 +1,10 @@
+import { exigirAdmin } from '@/lib/auth/permissoes';
 import { Card, CardDescription, CardTitle } from '@/components/ui/Card';
 import { createClient } from '@/lib/supabase/server';
 import { formatarMoeda } from '@/lib/utils';
 
 export default async function FaturamentoPage() {
+  await exigirAdmin();
   const supabase = await createClient();
   const { data } = await supabase.from('presencial_payments').select('amount, method, status').eq('status', 'paid');
   const total = data?.reduce((sum, item) => sum + Number(item.amount), 0) ?? 0;

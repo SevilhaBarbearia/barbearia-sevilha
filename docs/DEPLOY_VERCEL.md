@@ -53,3 +53,7 @@ npm run build
 - Acessar painel admin.
 - Registrar pagamento presencial.
 - Verificar faturamento básico.
+
+## Login administrativo separado
+
+Antes de publicar esta versão, siga [ACESSO_ADMINISTRATIVO.md](ACESSO_ADMINISTRATIVO.md) para aplicar a migração 008 e criar a conta administrativa com senha. As rotas do painel continuam em `/admin`; a entrada exclusiva é `/admin/login`.

@@ -1,3 +1,4 @@
+import { exigirAdmin } from '@/lib/auth/permissoes';
 import { endOfDay, startOfDay } from 'date-fns';
 import { CalendarCheck, Scissors, TrendingUp, UsersRound } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
@@ -7,6 +8,7 @@ import { createClient } from '@/lib/supabase/server';
 import { formatarMoeda } from '@/lib/utils';
 
 export default async function AdminDashboardPage() {
+  await exigirAdmin();
   const supabase = await createClient();
   const hojeInicio = startOfDay(new Date()).toISOString();
   const hojeFim = endOfDay(new Date()).toISOString();

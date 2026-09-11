@@ -1,3 +1,4 @@
+import { exigirAdmin } from '@/lib/auth/permissoes';
 import { Clock3, ImageIcon, Plus, Scissors } from 'lucide-react';
 import { Card, CardDescription, CardTitle } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -7,6 +8,7 @@ import { AlternarStatusServicoForm, ServicoAdminForm } from '@/components/forms/
 import type { Service } from '@/lib/db/types';
 
 export default async function ServicosAdminPage() {
+  await exigirAdmin();
   const supabase = await createClient();
 
   const { data: servicos, error } = await supabase

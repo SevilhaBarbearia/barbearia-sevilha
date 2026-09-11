@@ -44,13 +44,7 @@ A arquitetura já separa autenticação, perfil e contato. Para OTP/SMS/WhatsApp
 
 ## 6. Criar admin
 
-Depois de logar pela primeira vez:
-
-```sql
-update public.profiles
-set role = 'admin'
-where email = 'seuemail@gmail.com';
-```
+Siga [ACESSO_ADMINISTRATIVO.md](ACESSO_ADMINISTRATIVO.md): conta específica de e-mail/senha, migração 008 e permissão concedida pelo UUID no SQL Editor. Clientes continuam com Google. O login administrativo é `/admin/login`.
 
 ## 7. RLS
 

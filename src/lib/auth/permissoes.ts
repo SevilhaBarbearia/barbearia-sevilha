@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { permiteAdministracao } from './admin-policy';
 import type { Profile } from '@/lib/db/types';
 
 export async function obterUsuarioAtual() {
@@ -33,14 +34,20 @@ export async function exigirPerfilCompleto() {
   return { user, profile };
 }
 
-export async function exigirAdmin() {
-  const { user, profile } = await exigirUsuario();
+export async function obterAdministradorAtual() {
+  const { user, profile } = await obterUsuarioAtual();
+  if (!user || profile?.role !== 'admin' || !profile.is_active) return null;
 
-  if (profile?.role !== 'admin') {
-    redirect('/cliente/agendamentos');
-  }
-
+  const supabase = await createClient();
+  const { data, error } = await supabase.auth.getClaims();
+  if (error || !permiteAdministracao(user.id, profile, data?.claims)) return null;
   return { user, profile };
+}
+
+export async function exigirAdmin() {
+  const admin = await obterAdministradorAtual();
+  if (!admin) redirect('/admin/login');
+  return admin;
 }
 
 export function podeGerenciarAgenda(role?: string | null) {

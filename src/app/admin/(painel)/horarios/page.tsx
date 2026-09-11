@@ -1,3 +1,4 @@
+import { exigirAdmin } from '@/lib/auth/permissoes';
 import { CalendarX2, Clock3, Search, ShieldCheck } from 'lucide-react';
 import { format } from 'date-fns';
 import { Badge } from '@/components/ui/Badge';
@@ -43,6 +44,7 @@ function dataHoraPtBR(valor: string) {
 }
 
 export default async function HorariosAdminPage({ searchParams }: PageProps) {
+  await exigirAdmin();
   const params = await searchParams;
   const dataFiltro = normalizarDataFiltro(params?.data);
   const barbeiroFiltro = params?.barbeiro ?? 'todos';

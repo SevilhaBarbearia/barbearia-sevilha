@@ -10,11 +10,12 @@ import {
   useState
 } from 'react';
 import type {
+  ButtonHTMLAttributes,
+  ReactNode,
   ChangeEvent,
   InputHTMLAttributes,
   KeyboardEvent,
   LabelHTMLAttributes,
-  ReactNode,
   SelectHTMLAttributes,
   TextareaHTMLAttributes
 } from 'react';
@@ -41,23 +42,9 @@ function extrairOpcoes(children: SelectHTMLAttributes<HTMLSelectElement>['childr
   return Children.toArray(children)
     .filter(isValidElement)
     .map((child) => {
-      const props = child.props as {
-        value?: string | number;
-        children?: ReactNode;
-        disabled?: boolean;
-      };
-
-      const label = Children.toArray(props.children)
-        .map((item) => {
-          if (typeof item === 'string' || typeof item === 'number') {
-            return String(item);
-          }
-
-          return '';
-        })
-        .join('');
-
-      const value = props.value === undefined ? label : String(props.value);
+      const props = child.props as { value?: string | number; children?: ReactNode; disabled?: boolean };
+      const value = props.value === undefined ? String(props.children ?? '') : String(props.value);
+      const label = Children.toArray(props.children).join('');
 
       return {
         value,
@@ -74,6 +61,9 @@ function extrairOpcoes(children: SelectHTMLAttributes<HTMLSelectElement>['childr
  * a identidade premium da interface. Este componente remove o <select> visível e usa
  * um input hidden para preservar o envio normal dos formulários/server actions.
  */
+type SelectProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'onChange' | 'value' | 'defaultValue' | 'type'> &
+  Pick<SelectHTMLAttributes<HTMLSelectElement>, 'onChange' | 'value' | 'defaultValue' | 'required'>;
+
 export function Select({
   children,
   className,
@@ -85,7 +75,7 @@ export function Select({
   required,
   onChange,
   ...props
-}: SelectHTMLAttributes<HTMLSelectElement>) {
+}: SelectProps) {
   const generatedId = useId();
   const buttonId = id ?? `select-${generatedId}`;
   const containerRef = useRef<HTMLDivElement>(null);
@@ -186,6 +176,7 @@ export function Select({
       )}
 
       <button
+        {...props}
         id={buttonId}
         type="button"
         disabled={disabled}

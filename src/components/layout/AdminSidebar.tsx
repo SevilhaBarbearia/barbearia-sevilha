@@ -1,4 +1,6 @@
 import Link from 'next/link';
+import { sairAdministrador } from '@/lib/auth/admin-actions';
+import { Button } from '@/components/ui/Button';
 import { CalendarDays, Clock3, CreditCard, LayoutDashboard, Scissors, Settings, TrendingUp, UsersRound, ClipboardList, Home } from 'lucide-react';
 import { Logo } from '@/components/brand/Logo';
 
@@ -39,6 +41,9 @@ export function AdminSidebar() {
           </Link>
         ))}
       </nav>
+      <form action={sairAdministrador} className="mt-6">
+        <Button type="submit" variant="secondary" className="w-full">Sair da administração</Button>
+      </form>
     </aside>
   );
 }

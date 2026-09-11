@@ -1,3 +1,4 @@
+import { exigirAdmin } from '@/lib/auth/permissoes';
 import { ImageIcon, Plus, Scissors, UsersRound } from 'lucide-react';
 import { Card, CardDescription, CardTitle } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -20,6 +21,7 @@ function horarioPadraoDoBarbeiro(horarios: BusinessHour[], barberId: string) {
 }
 
 export default async function BarbeirosAdminPage() {
+  await exigirAdmin();
   const supabase = await createClient();
 
   const [barbeirosResult, servicosResult, horariosResult] = await Promise.all([

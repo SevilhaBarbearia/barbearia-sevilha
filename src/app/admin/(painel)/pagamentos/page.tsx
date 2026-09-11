@@ -1,9 +1,11 @@
+import { exigirAdmin } from '@/lib/auth/permissoes';
 import { format } from 'date-fns';
 import { Card, CardDescription, CardTitle } from '@/components/ui/Card';
 import { createClient } from '@/lib/supabase/server';
 import { formatarMoeda } from '@/lib/utils';
 
 export default async function PagamentosPage() {
+  await exigirAdmin();
   const supabase = await createClient();
   const { data } = await supabase
     .from('presencial_payments')

@@ -91,17 +91,11 @@ npm run dev
 
 Acesse: `http://localhost:3000`
 
-## Como tornar um usuário administrador
+## Acesso administrativo
 
-Após fazer login com Google uma vez, o perfil será criado em `profiles`. No SQL Editor, execute:
+A administração tem entrada exclusiva em `/admin/login`, com e-mail e senha de uma conta admin ativa previamente criada. Clientes continuam usando Google em `/login`.
 
-```sql
-update public.profiles
-set role = 'admin'
-where email = 'seuemail@gmail.com';
-```
-
-Depois acesse `/admin`.
+Antes de publicar, aplique a migração `008_acesso_administrativo.sql` e siga [o guia de implantação do administrador](docs/ACESSO_ADMINISTRATIVO.md). Não existe senha padrão ou cadastro público de administradores.
 
 ## Observações de segurança
 
