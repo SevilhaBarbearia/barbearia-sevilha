@@ -18,6 +18,23 @@ export type Profile = {
   is_active: boolean;
 };
 
+export type BusinessSettings = {
+  id: string;
+  business_name: string;
+  address: string | null;
+  phone: string | null;
+  whatsapp: string | null;
+  instagram: string | null;
+  cancellation_limit_hours: number;
+  booking_advance_days: number;
+  // Cores de marca do tenant (whitelabel). Nulas = usa o padrão do produto —
+  // ver src/lib/theme/paleta-marca.ts para a lógica de fallback.
+  primary_color: string | null;
+  primary_color_dark: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type Service = {
   id: string;
   name: string;
