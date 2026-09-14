@@ -1,9 +1,9 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
-import { exigirPerfilCompleto, exigirUsuario } from "@/lib/auth/permissoes";
+
+import { getAvailabilityCacheTag } from "@/features/availability/cache";
 import {
   requireBarbershop,
   requireBarbershopManager,
@@ -14,6 +14,8 @@ import {
   criarAgendamentoSchema,
   pagamentoPresencialSchema,
 } from "@/lib/agendamentos/schemas";
+import { exigirPerfilCompleto, exigirUsuario } from "@/lib/auth/permissoes";
+import { createClient } from "@/lib/supabase/server";
 
 function normalizePhone(phone: string) {
   return phone.replace(/\D/g, "");
@@ -122,6 +124,10 @@ export async function criarAgendamento(formData: FormData) {
     };
   }
 
+  // A Home pode mostrar o novo próximo horário imediatamente após a reserva.
+  updateTag(getAvailabilityCacheTag(barbershop.id));
+
+  revalidatePath(`/${barbershop.slug}`);
   revalidatePath(`/${barbershop.slug}/cliente/agendamentos`);
   revalidatePath(`/admin/${barbershop.slug}/agenda`);
   revalidatePath(`/admin/${barbershop.slug}/reservas`);
@@ -180,6 +186,10 @@ export async function cancelarAgendamento(formData: FormData) {
     };
   }
 
+  // Um cancelamento pode liberar justamente o horário exibido na Home.
+  updateTag(getAvailabilityCacheTag(barbershop.id));
+
+  revalidatePath(`/${barbershop.slug}`);
   revalidatePath(`/${barbershop.slug}/cliente/agendamentos`);
   revalidatePath(`/admin/${barbershop.slug}/agenda`);
   revalidatePath(`/admin/${barbershop.slug}/reservas`);
@@ -234,9 +244,7 @@ export async function registrarPagamentoPresencial(formData: FormData) {
       status: parsed.data.status,
       received_by: user.id,
       paid_at:
-        parsed.data.status === "paid"
-          ? new Date().toISOString()
-          : null,
+        parsed.data.status === "paid" ? new Date().toISOString() : null,
       updated_at: new Date().toISOString(),
     },
     {
