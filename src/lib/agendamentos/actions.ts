@@ -24,14 +24,21 @@ function formSlug(formData: FormData) {
 }
 
 function bookingErrorMessage(code?: string) {
+  if (code?.includes("CUSTOMER_TIME_CONFLICT"))
+    return "Você já possui outro agendamento nesse mesmo horário.";
+
   if (code?.includes("SLOT_UNAVAILABLE"))
     return "Esse horário acabou de ser reservado. Escolha outro.";
+
   if (code?.includes("SLOT_BLOCKED"))
     return "O horário está bloqueado pela barbearia.";
+
   if (code?.includes("OUTSIDE_BUSINESS_HOURS"))
     return "O horário está fora do expediente do barbeiro.";
+
   if (code?.includes("ADVANCE_LIMIT"))
     return "A data ultrapassa o limite de antecedência da barbearia.";
+
   return "Não foi possível confirmar a reserva. Confira os dados e tente novamente.";
 }
 
@@ -67,8 +74,13 @@ export async function completarCadastro(formData: FormData) {
     customer_phone: customer.phone,
     customer_email: customer.email || null,
   });
-  if (error)
-    return { ok: false, mensagem: "Não foi possível atualizar seu cadastro." };
+
+  if (error) {
+    return {
+      ok: false,
+      mensagem: "Não foi possível atualizar seu cadastro.",
+    };
+  }
 
   revalidatePath(`/${barbershop.slug}/cliente/perfil`);
   redirect(`/${barbershop.slug}/reservar`);
@@ -76,6 +88,7 @@ export async function completarCadastro(formData: FormData) {
 
 export async function criarAgendamento(formData: FormData) {
   await exigirPerfilCompleto(formSlug(formData));
+
   const barbershop = await requireBarbershop(formSlug(formData));
   const supabase = await createClient();
 
@@ -102,14 +115,23 @@ export async function criarAgendamento(formData: FormData) {
     target_client_notes: parsed.data.client_notes || null,
   });
 
-  if (error) return { ok: false, mensagem: bookingErrorMessage(error.message) };
+  if (error) {
+    return {
+      ok: false,
+      mensagem: bookingErrorMessage(error.message),
+    };
+  }
 
   revalidatePath(`/${barbershop.slug}/cliente/agendamentos`);
+  revalidatePath(`/admin/${barbershop.slug}/agenda`);
+  revalidatePath(`/admin/${barbershop.slug}/reservas`);
+
   redirect(`/${barbershop.slug}/cliente/agendamentos?reservado=1`);
 }
 
 export async function cancelarAgendamento(formData: FormData) {
   await exigirUsuario(formSlug(formData));
+
   const barbershop = await requireBarbershop(formSlug(formData));
   const supabase = await createClient();
 
@@ -117,7 +139,13 @@ export async function cancelarAgendamento(formData: FormData) {
     appointment_id: formData.get("appointment_id"),
     cancellation_reason: formData.get("cancellation_reason") || undefined,
   });
-  if (!parsed.success) return { ok: false, mensagem: "Agendamento inválido." };
+
+  if (!parsed.success) {
+    return {
+      ok: false,
+      mensagem: "Agendamento inválido.",
+    };
+  }
 
   const { data: appointment } = await supabase
     .from("appointments")
@@ -125,8 +153,13 @@ export async function cancelarAgendamento(formData: FormData) {
     .eq("id", parsed.data.appointment_id)
     .eq("barbershop_id", barbershop.id)
     .maybeSingle();
-  if (!appointment)
-    return { ok: false, mensagem: "Agendamento não encontrado." };
+
+  if (!appointment) {
+    return {
+      ok: false,
+      mensagem: "Agendamento não encontrado.",
+    };
+  }
 
   const { error } = await supabase.rpc("cancel_my_appointment", {
     target_appointment_id: appointment.id,
@@ -139,18 +172,29 @@ export async function cancelarAgendamento(formData: FormData) {
       mensagem: "O prazo permitido para cancelamento já terminou.",
     };
   }
-  if (error)
-    return { ok: false, mensagem: "Não foi possível cancelar o agendamento." };
+
+  if (error) {
+    return {
+      ok: false,
+      mensagem: "Não foi possível cancelar o agendamento.",
+    };
+  }
 
   revalidatePath(`/${barbershop.slug}/cliente/agendamentos`);
+  revalidatePath(`/admin/${barbershop.slug}/agenda`);
   revalidatePath(`/admin/${barbershop.slug}/reservas`);
-  return { ok: true, mensagem: "Agendamento cancelado com sucesso." };
+
+  return {
+    ok: true,
+    mensagem: "Agendamento cancelado com sucesso.",
+  };
 }
 
 export async function registrarPagamentoPresencial(formData: FormData) {
   const { user, barbershop } = await requireBarbershopManager(
     formSlug(formData),
   );
+
   const supabase = await createClient();
 
   const parsed = pagamentoPresencialSchema.safeParse({
@@ -173,8 +217,13 @@ export async function registrarPagamentoPresencial(formData: FormData) {
     .eq("id", parsed.data.appointment_id)
     .eq("barbershop_id", barbershop.id)
     .maybeSingle();
-  if (!appointment)
-    return { ok: false, mensagem: "Reserva não encontrada nesta barbearia." };
+
+  if (!appointment) {
+    return {
+      ok: false,
+      mensagem: "Reserva não encontrada nesta barbearia.",
+    };
+  }
 
   const { error } = await supabase.from("presencial_payments").upsert(
     {
@@ -184,27 +233,38 @@ export async function registrarPagamentoPresencial(formData: FormData) {
       method: parsed.data.method,
       status: parsed.data.status,
       received_by: user.id,
-      paid_at: parsed.data.status === "paid" ? new Date().toISOString() : null,
+      paid_at:
+        parsed.data.status === "paid"
+          ? new Date().toISOString()
+          : null,
       updated_at: new Date().toISOString(),
     },
-    { onConflict: "appointment_id" },
+    {
+      onConflict: "appointment_id",
+    },
   );
 
-  if (error)
+  if (error) {
     return {
       ok: false,
       mensagem: "Não foi possível registrar o pagamento presencial.",
     };
+  }
 
   await supabase.from("appointment_events").insert({
     barbershop_id: barbershop.id,
     appointment_id: appointment.id,
     event_type: "payment_registered",
-    description: "Pagamento presencial registrado no painel administrativo.",
+    description:
+      "Pagamento presencial registrado no painel administrativo.",
     created_by: user.id,
   });
 
   revalidatePath(`/admin/${barbershop.slug}/pagamentos`);
   revalidatePath(`/admin/${barbershop.slug}/faturamento`);
-  return { ok: true, mensagem: "Pagamento presencial registrado." };
+
+  return {
+    ok: true,
+    mensagem: "Pagamento presencial registrado.",
+  };
 }
