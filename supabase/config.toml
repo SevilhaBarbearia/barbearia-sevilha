@@ -1,0 +1,4 @@
+project_id = "barbearia-sevilha"
+
+[functions.process-notifications]
+verify_jwt = true

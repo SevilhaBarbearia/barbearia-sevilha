@@ -1,166 +1,100 @@
-# Sevilha Barbearia
+# Plataforma de Barbearias
 
-Aplicativo web profissional para barbearia com vitrine pública, reserva online, área do cliente, painel administrativo e controle de pagamentos presenciais.
-
-Este projeto foi estruturado em português do Brasil, com foco em código limpo, manutenção simples e evolução futura.
-
-## Stack
-
-- Next.js com TypeScript
-- Tailwind CSS
-- Supabase Auth
-- Supabase PostgreSQL
-- Row Level Security no banco
-- Deploy preparado para Vercel
-- Validação com Zod
-
-## O que está incluído
-
-- Login com Google via Supabase Auth
-- Tela obrigatória para completar telefone/WhatsApp após primeiro login
-- Perfil de cliente salvo para contato posterior
-- Página pública com serviços e barbeiros
-- Fluxo de reserva com serviço, barbeiro, data e horário disponível
-- Cálculo de horários disponíveis respeitando expediente, pausa, bloqueios e reservas ativas
-- Área do cliente com agendamentos, perfil e histórico
-- Painel administrativo com dashboard, agenda do dia, reservas, pagamentos e faturamento básico
-- Registro de pagamento presencial sem checkout online
-- Migrations SQL com tabelas, constraints, views, funções, triggers e RLS
-- Documentação para Supabase e Vercel
+Projeto Next.js + TypeScript + Supabase para várias barbearias na mesma aplicação. A migração transforma os dados anteriores em vínculos da Sevilha. Cada unidade mantém serviços, profissionais, clientes, agenda, fidelidade e configurações próprios.
 
 ## Estrutura
 
-```txt
-src/
-  app/                    # Rotas Next.js App Router
-  components/             # Componentes reutilizáveis de UI, layout e formulários
-  lib/
-    agendamentos/         # Regras de reserva, validações e server actions
-    auth/                 # Permissões e provider de autenticação
-    db/                   # Tipos TypeScript principais
-    supabase/             # Clientes Supabase server/browser
-supabase/
-  migrations/             # SQL do banco, RLS e funções
-  seed.sql                # Dados iniciais de desenvolvimento
-docs/
-  CONFIGURACAO_SUPABASE.md
-  DEPLOY_VERCEL.md
-  ROADMAP.md
+```text
+barbearia-sevilha/
+├── public/
+├── src/
+│   ├── app/
+│   │   ├── [slug]/               # Vitrine, login, reserva, cliente e avaliação
+│   │   ├── admin/[slug]/         # Gestão da unidade
+│   │   ├── admin/login/
+│   │   ├── admin/selecionar/
+│   │   ├── plataforma/
+│   │   ├── api/
+│   │   └── auth/
+│   ├── components/              # Componentes visuais e formulários
+│   ├── features/                # Tenancy, clientes, fidelidade, notificações e gestão
+│   └── lib/                     # Supabase, autorização, validações e utilidades
+├── supabase/
+│   ├── migrations/              # 001 a 021, em ordem
+│   ├── functions/process-notifications/
+│   ├── setup/notifications_cron.sql
+│   ├── config.toml
+│   └── seed.sql                 # Somente desenvolvimento
+├── tests/
+├── docs/
+├── .env.example
+├── package.json
+└── package-lock.json
 ```
 
-## Como rodar localmente
+## Instalar
 
-1. Instale as dependências:
-
-```bash
-npm install
-```
-
-2. Copie as variáveis de ambiente:
+Use Node.js 22.18 ou superior e npm.
 
 ```bash
+npm ci
 cp .env.example .env.local
 ```
 
-3. Preencha no `.env.local`:
-
-```env
-NEXT_PUBLIC_SUPABASE_URL=https://SEU_PROJETO.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=sua_chave_anonima
-NEXT_PUBLIC_SITE_URL=http://localhost:3000
-```
-
-4. Execute as migrations no Supabase SQL Editor, na ordem:
-
-```txt
-supabase/migrations/001_schema.sql
-supabase/migrations/002_rls.sql
-supabase/migrations/003_functions.sql
-supabase/migrations/004_admin_crud_grants.sql
-supabase/migrations/005_branding_sevilha.sql
-supabase/seed.sql
-```
-
-5. Configure o provedor Google no Supabase Auth.
-
-6. Rode o projeto:
+Preencha as três variáveis públicas em `.env.local`, aplique as migrations conforme `docs/MIGRACAO_SAAS.md` e execute:
 
 ```bash
 npm run dev
 ```
 
-Acesse: `http://localhost:3000`
+Acesse `/sevilha`. O login de clientes usa Google; o painel administrativo usa e-mail e senha. Configure o provedor Google e o callback no Supabase antes de testar o login real.
 
-## Acesso administrativo
+## Recursos
 
-A administração tem entrada exclusiva em `/admin/login`, com e-mail e senha de uma conta admin ativa previamente criada. Clientes continuam usando Google em `/login`.
+- Unidade por slug, organização com várias unidades e criação controlada pelo administrador da plataforma.
+- Catálogo, preços, profissionais, expediente semanal, pausa e bloqueios próprios.
+- Reservas transacionais com preço/duração calculados no banco, prazo de cancelamento e prevenção de sobreposição.
+- Painel administrativo, pagamentos presenciais e totais de faturamento agregados no banco.
+- Fidelidade por atendimento, valor do serviço concluído ou regra por serviço; criação/edição de recompensas, resgate atômico e extrato.
+- Aniversários por e-mail com texto e horário configuráveis, respeitando fuso e consentimento.
+- Pesquisa após conclusão, token de uso único, média geral, últimos 30 dias, por profissional e comentários recentes.
+- Nome, descrição, logo, banner, cores e contatos próprios; upload de imagens JPG/PNG/WebP de até 5 MB para caminhos separados por unidade.
+- Validações, retorno de erros nos formulários, tela global de erro, RLS, auditoria e fila de e-mails com tentativas limitadas.
 
-Antes de publicar, aplique a migração `008_acesso_administrativo.sql` e siga [o guia de implantação do administrador](docs/ACESSO_ADMINISTRATIVO.md). Não existe senha padrão ou cadastro público de administradores.
+As recompensas são entregues pelo estabelecimento; o resgate registra e desconta pontos, sem alterar automaticamente o pagamento. Os planos são registros administrativos; não há cobrança automática nem bloqueio de recursos por plano. WhatsApp/SMS estão previstos no modelo, mas o envio desta versão usa apenas Resend.
 
-## Observações de segurança
+## Rotas
 
-- Nunca coloque `SUPABASE_SERVICE_ROLE_KEY` no frontend.
-- A aplicação usa RLS nas tabelas sensíveis.
-- O banco possui constraint para impedir conflito de horários ativos do mesmo barbeiro.
-- O cliente só deve acessar os próprios agendamentos.
-- Admin acessa o painel e dados operacionais.
-- Pagamentos são apenas registros presenciais, sem integração de checkout.
+- `/{slug}` e `/{slug}/reservar`
+- `/{slug}/cliente/agendamentos`, `/historico`, `/perfil`, `/fidelidade`
+- `/{slug}/avaliar/{token}`
+- `/admin/login`, `/admin/selecionar`, `/admin/{slug}`
+- `/plataforma`
 
-## Próximas evoluções recomendadas
+Links antigos conhecidos da Sevilha redirecionam para os caminhos com slug. O login e o callback mantêm a unidade atual.
 
-- CRUD completo visual para serviços, barbeiros, horários e bloqueios.
-- Confirmação automática por WhatsApp.
-- Perfil de barbeiro com agenda própria.
-- Relatórios avançados por período, serviço e barbeiro.
-- Comissão por barbeiro.
-- Múltiplas unidades.
-- Modo SaaS para várias barbearias.
+## Validar
 
-## Critério de aceite do MVP
+```bash
+npm run typecheck
+npm test
+npm run format:check
+npm run build
+```
 
-- Cliente consegue logar com Google.
-- Cliente completa telefone/WhatsApp obrigatório.
-- Cliente escolhe serviço, barbeiro, data e horário.
-- Sistema salva reserva e não permite conflito para o mesmo barbeiro.
-- Admin visualiza reserva no painel.
-- Admin registra pagamento presencial.
-- Faturamento considera apenas pagamentos presenciais marcados como `paid`.
+Com Deno instalado:
 
+```bash
+deno check supabase/functions/process-notifications/index.ts
+deno test --allow-env supabase/functions/process-notifications/handler_test.ts
+```
 
-## Atualização de layout
+Os testes de banco executam todas as migrations em PostgreSQL embarcado (PGlite), com simulação das estruturas de Auth e Storage. Os testes de e-mail simulam o Resend e não enviam mensagens reais. Veja os resultados e limites em `docs/VALIDACAO.md`.
 
-Esta versão inclui uma camada visual mais profissional: logo, ilustração de barbearia, botões mais claros, cards com imagem, home mais premium, tela de reserva guiada e painel administrativo com navegação visual.
+## Guias
 
-Veja também: `docs/GUIA_LAYOUT.md`.
-
-## Atualização: horários e bloqueios administrativos
-
-A tela `/admin/horarios` agora possui CRUD funcional para expediente semanal e bloqueios específicos.
-
-Funcionalidades disponíveis:
-
-- cadastrar expediente por barbeiro;
-- editar expediente;
-- ativar/desativar expediente;
-- excluir expediente;
-- criar bloqueio específico;
-- remover bloqueio específico.
-
-Essas regras já são usadas no cálculo de horários disponíveis da reserva.
-
-Leia também: `docs/GUIA_HORARIOS_BLOQUEIOS.md`.
-
-## Responsividade e densidade visual
-
-A versão atual inclui ajustes de responsividade para reduzir tamanhos de fontes, cards, botões e imagens em telas menores sem alterar as funcionalidades já implementadas. Consulte `docs/GUIA_RESPONSIVIDADE.md`.
-
-
-## Ajustes visuais recentes
-
-- Nome público atualizado para **Sevilha Barbearia**.
-- Logo com espaçamento reforçado entre ícone e texto.
-- Botões principais com largura e espaçamento mais claros.
-- Botões de horários disponíveis com área clicável maior e melhor respiro visual.
-- Cards de serviços reorganizados para manter duração e nome separados, evitando sobreposição em telas menores.
-
-Esses ajustes são apenas de apresentação e não alteram autenticação, banco, RLS, reservas, CRUD administrativo ou cálculo de horários.
+- [Banco, e-mail e cron](docs/MIGRACAO_SAAS.md)
+- [Contas administrativas](docs/ACESSO_ADMINISTRATIVO.md)
+- [Publicação](docs/DEPLOY.md)
+- [Validação da entrega](docs/VALIDACAO.md)
+- [Arquivos alterados](docs/ARQUIVOS_ALTERADOS.md)

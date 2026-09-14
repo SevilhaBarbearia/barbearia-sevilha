@@ -1,0 +1,150 @@
+# Arquivos da entrega
+
+Caminhos relativos à pasta `barbearia-sevilha/` na raiz do ZIP. Cada arquivo contém o código completo; não são fragmentos para montagem manual. Comparação com `sevilha-barbearia-expediente-barbeiro-vercel.zip`.
+
+## Adicionados ou alterados
+
+- `.env.example` — alterado
+- `.gitignore` — alterado
+- `README.md` — alterado
+- `docs/ACESSO_ADMINISTRATIVO.md` — alterado
+- `docs/DEPLOY.md` — novo
+- `docs/MIGRACAO_SAAS.md` — novo
+- `docs/VALIDACAO.md` — novo
+- `next.config.ts` — alterado
+- `package-lock.json` — alterado
+- `package.json` — alterado
+- `src/app/[slug]/avaliar/[token]/page.tsx` — novo
+- `src/app/[slug]/cliente/agendamentos/page.tsx` — novo
+- `src/app/[slug]/cliente/fidelidade/page.tsx` — novo
+- `src/app/[slug]/cliente/historico/page.tsx` — novo
+- `src/app/[slug]/cliente/layout.tsx` — novo
+- `src/app/[slug]/cliente/perfil/page.tsx` — novo
+- `src/app/[slug]/completar-cadastro/page.tsx` — novo
+- `src/app/[slug]/layout.tsx` — novo
+- `src/app/[slug]/login/page.tsx` — novo
+- `src/app/[slug]/page.tsx` — novo
+- `src/app/[slug]/reservar/page.tsx` — novo
+- `src/app/admin/[slug]/agenda/page.tsx` — novo
+- `src/app/admin/[slug]/barbeiros/page.tsx` — novo
+- `src/app/admin/[slug]/configuracoes/page.tsx` — novo
+- `src/app/admin/[slug]/faturamento/page.tsx` — novo
+- `src/app/admin/[slug]/fidelidade/page.tsx` — novo
+- `src/app/admin/[slug]/horarios/page.tsx` — novo
+- `src/app/admin/[slug]/layout.tsx` — novo
+- `src/app/admin/[slug]/pagamentos/page.tsx` — novo
+- `src/app/admin/[slug]/page.tsx` — novo
+- `src/app/admin/[slug]/reservas/page.tsx` — novo
+- `src/app/admin/[slug]/satisfacao/page.tsx` — novo
+- `src/app/admin/[slug]/servicos/page.tsx` — novo
+- `src/app/admin/login/page.tsx` — alterado
+- `src/app/admin/page.tsx` — novo
+- `src/app/admin/selecionar/page.tsx` — novo
+- `src/app/api/horarios-disponiveis/route.ts` — alterado
+- `src/app/auth/callback/route.ts` — alterado
+- `src/app/completar-cadastro/page.tsx` — alterado
+- `src/app/error.tsx` — novo
+- `src/app/globals.css` — alterado
+- `src/app/layout.tsx` — alterado
+- `src/app/login/page.tsx` — alterado
+- `src/app/page.tsx` — alterado
+- `src/app/plataforma/page.tsx` — novo
+- `src/app/reservar/page.tsx` — alterado
+- `src/components/agendamento/SeletorHorario.tsx` — alterado
+- `src/components/brand/Logo.tsx` — alterado
+- `src/components/forms/ActionForm.tsx` — novo
+- `src/components/forms/AdminLoginForm.tsx` — alterado
+- `src/components/forms/BotaoSubmit.tsx` — alterado
+- `src/components/forms/CompletarCadastroForm.tsx` — alterado
+- `src/components/forms/FeedbackForm.tsx` — novo
+- `src/components/forms/ImageField.tsx` — novo
+- `src/components/forms/LoginGoogleButton.tsx` — alterado
+- `src/components/forms/PagamentoPresencialForm.tsx` — alterado
+- `src/components/forms/ReservaForm.tsx` — alterado
+- `src/components/forms/admin/BarbeiroAdminForm.tsx` — alterado
+- `src/components/forms/admin/HorarioAtendimentoForm.tsx` — alterado
+- `src/components/forms/admin/RewardForm.tsx` — novo
+- `src/components/forms/admin/ServicoAdminForm.tsx` — alterado
+- `src/components/layout/AdminSidebar.tsx` — alterado
+- `src/components/layout/ClienteSidebar.tsx` — alterado
+- `src/components/layout/NavPublica.tsx` — alterado
+- `src/components/ui/Badge.tsx` — alterado
+- `src/components/ui/Button.tsx` — alterado
+- `src/components/ui/Card.tsx` — alterado
+- `src/components/ui/Input.tsx` — alterado
+- `src/features/appointments/admin-actions.ts` — novo
+- `src/features/customers/actions.ts` — novo
+- `src/features/feedback/actions.ts` — novo
+- `src/features/loyalty/actions.ts` — novo
+- `src/features/loyalty/customer-actions.ts` — novo
+- `src/features/platform/actions.ts` — novo
+- `src/features/settings/actions.ts` — novo
+- `src/features/storage/actions.ts` — novo
+- `src/features/tenancy/server.ts` — novo
+- `src/lib/actions/form-action.ts` — alterado
+- `src/lib/admin/actions.ts` — alterado
+- `src/lib/admin/schemas.ts` — alterado
+- `src/lib/agendamentos/actions.ts` — alterado
+- `src/lib/agendamentos/schemas.ts` — alterado
+- `src/lib/auth/admin-actions.ts` — alterado
+- `src/lib/auth/admin-policy.ts` — alterado
+- `src/lib/auth/auth-provider.tsx` — alterado
+- `src/lib/auth/permissoes.ts` — alterado
+- `src/lib/dates.ts` — novo
+- `src/lib/db/types.ts` — alterado
+- `src/lib/supabase/client.ts` — alterado
+- `src/lib/supabase/server.ts` — alterado
+- `src/lib/utils.ts` — alterado
+- `src/proxy.ts` — alterado
+- `supabase/config.toml` — novo
+- `supabase/functions/process-notifications/deno.json` — novo
+- `supabase/functions/process-notifications/handler.ts` — novo
+- `supabase/functions/process-notifications/handler_test.ts` — novo
+- `supabase/functions/process-notifications/index.ts` — novo
+- `supabase/migrations/009_saas_multitenant.sql` — novo
+- `supabase/migrations/010_saas_rls.sql` — novo
+- `supabase/migrations/011_loyalty_notifications_feedback.sql` — novo
+- `supabase/migrations/012_storage_multitenant.sql` — novo
+- `supabase/migrations/013_security_audit_rate_limit.sql` — novo
+- `supabase/migrations/014_appointment_functions.sql` — novo
+- `supabase/migrations/015_integrity_and_permissions.sql` — novo
+- `supabase/migrations/016_availability.sql` — novo
+- `supabase/migrations/017_notification_queue.sql` — novo
+- `supabase/migrations/018_customer_profile.sql` — novo
+- `supabase/migrations/019_local_blocks.sql` — novo
+- `supabase/migrations/020_day_bounds.sql` — novo
+- `supabase/migrations/021_report_totals.sql` — novo
+- `supabase/seed.sql` — alterado
+- `supabase/setup/notifications_cron.sql` — novo
+- `tests/database.test.mjs` — novo
+- `tsconfig.json` — alterado
+
+## Removidos ou substituídos
+
+- `docs/CONFIGURACAO_SUPABASE.md`
+- `docs/DEPLOY_VERCEL.md`
+- `docs/GUIA_AJUSTES_VISUAIS.md`
+- `docs/GUIA_AJUSTES_VISUAIS_SELECTS_DEPLOY.md`
+- `docs/GUIA_AJUSTE_HORARIOS_BLOQUEIOS.md`
+- `docs/GUIA_AJUSTE_HORARIOS_LIMPO.md`
+- `docs/GUIA_EXPEDIENTE_BARBEIRO_E_DEPLOY.md`
+- `docs/GUIA_HORARIOS_BLOQUEIOS.md`
+- `docs/GUIA_LAYOUT.md`
+- `docs/GUIA_RESPONSIVIDADE.md`
+- `docs/ROADMAP.md`
+- `docs/VALIDACAO_ADMIN.md`
+- `src/app/admin/(painel)/agenda/page.tsx`
+- `src/app/admin/(painel)/barbeiros/page.tsx`
+- `src/app/admin/(painel)/configuracoes/page.tsx`
+- `src/app/admin/(painel)/faturamento/page.tsx`
+- `src/app/admin/(painel)/horarios/page.tsx`
+- `src/app/admin/(painel)/layout.tsx`
+- `src/app/admin/(painel)/pagamentos/page.tsx`
+- `src/app/admin/(painel)/page.tsx`
+- `src/app/admin/(painel)/reservas/page.tsx`
+- `src/app/admin/(painel)/servicos/page.tsx`
+- `src/app/cliente/agendamentos/page.tsx`
+- `src/app/cliente/historico/page.tsx`
+- `src/app/cliente/layout.tsx`
+- `src/app/cliente/perfil/page.tsx`
+- `src/lib/agendamentos/horarios.ts`

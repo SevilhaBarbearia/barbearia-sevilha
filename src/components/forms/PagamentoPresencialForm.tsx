@@ -1,23 +1,47 @@
-'use client';
+"use client";
 
-import { useFormStatus } from 'react-dom';
-import { registrarPagamentoPresencial } from '@/lib/agendamentos/actions';
-import { asFormAction } from '@/lib/actions/form-action';
-import { Button } from '@/components/ui/Button';
-import { Input, Label, Select } from '@/components/ui/Input';
+import { ActionForm } from "@/components/forms/ActionForm";
+
+import { useFormStatus } from "react-dom";
+import { registrarPagamentoPresencial } from "@/lib/agendamentos/actions";
+import { asFormAction } from "@/lib/actions/form-action";
+import { Button } from "@/components/ui/Button";
+import { Input, Label, Select } from "@/components/ui/Input";
 
 function BotaoPagamento() {
   const { pending } = useFormStatus();
-  return <Button disabled={pending}>{pending ? 'Registrando...' : 'Registrar pagamento'}</Button>;
+  return (
+    <Button disabled={pending}>
+      {pending ? "Registrando..." : "Registrar pagamento"}
+    </Button>
+  );
 }
 
-export function PagamentoPresencialForm({ appointmentId, valorPadrao }: { appointmentId: string; valorPadrao?: number }) {
+export function PagamentoPresencialForm({
+  appointmentId,
+  valorPadrao,
+  slug = "sevilha",
+}: {
+  appointmentId: string;
+  valorPadrao?: number;
+  slug?: string;
+}) {
   return (
-    <form action={asFormAction(registrarPagamentoPresencial)} className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto]">
+    <ActionForm
+      action={asFormAction(registrarPagamentoPresencial)}
+      className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto]"
+    >
+      <input type="hidden" name="slug" value={slug} />
       <input type="hidden" name="appointment_id" value={appointmentId} />
       <div>
         <Label>Valor recebido</Label>
-        <Input name="amount" type="number" step="0.01" defaultValue={valorPadrao ?? ''} required />
+        <Input
+          name="amount"
+          type="number"
+          step="0.01"
+          defaultValue={valorPadrao ?? ""}
+          required
+        />
       </div>
       <div>
         <Label>Forma</Label>
@@ -37,7 +61,9 @@ export function PagamentoPresencialForm({ appointmentId, valorPadrao }: { appoin
           <option value="canceled">Cancelado</option>
         </Select>
       </div>
-      <div className="self-end"><BotaoPagamento /></div>
-    </form>
+      <div className="self-end">
+        <BotaoPagamento />
+      </div>
+    </ActionForm>
   );
 }

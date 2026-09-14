@@ -1,15 +1,18 @@
-'use client';
+"use client";
 
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import type { User } from '@supabase/supabase-js';
-import { createClient } from '@/lib/supabase/client';
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import type { User } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase/client";
 
 type AuthContextValue = {
   user: User | null;
   carregando: boolean;
 };
 
-const AuthContext = createContext<AuthContextValue>({ user: null, carregando: true });
+const AuthContext = createContext<AuthContextValue>({
+  user: null,
+  carregando: true,
+});
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -30,7 +33,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => data.subscription.unsubscribe();
   }, [supabase]);
 
-  return <AuthContext.Provider value={{ user, carregando }}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={{ user, carregando }}>
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
 export function useAuth() {

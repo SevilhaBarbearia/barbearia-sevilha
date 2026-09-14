@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import {
   Children,
@@ -7,8 +7,8 @@ import {
   useId,
   useMemo,
   useRef,
-  useState
-} from 'react';
+  useState,
+} from "react";
 import type {
   ButtonHTMLAttributes,
   ReactNode,
@@ -17,19 +17,30 @@ import type {
   KeyboardEvent,
   LabelHTMLAttributes,
   SelectHTMLAttributes,
-  TextareaHTMLAttributes
-} from 'react';
-import { cn } from '@/lib/utils';
+  TextareaHTMLAttributes,
+} from "react";
+import { cn } from "@/lib/utils";
 
 const campoBase =
-  'w-full rounded-xl border border-white/10 bg-black/25 px-3.5 py-2.5 text-sm font-medium text-white shadow-inner shadow-black/20 outline-none transition placeholder:text-zinc-500 focus:border-brand-500 focus:bg-black/35 focus:ring-4 focus:ring-brand-500/15 disabled:cursor-not-allowed disabled:opacity-60 sm:rounded-2xl sm:px-4 sm:py-3';
+  "w-full rounded-xl border border-white/10 bg-black/25 px-3.5 py-2.5 text-sm font-medium text-white shadow-inner shadow-black/20 outline-none transition placeholder:text-zinc-500 focus:border-brand-500 focus:bg-black/35 focus:ring-4 focus:ring-brand-500/15 disabled:cursor-not-allowed disabled:opacity-60 sm:rounded-2xl sm:px-4 sm:py-3";
 
-export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
+export function Input({
+  className,
+  ...props
+}: InputHTMLAttributes<HTMLInputElement>) {
   return <input className={cn(campoBase, className)} {...props} />;
 }
 
-export function Label({ className, ...props }: LabelHTMLAttributes<HTMLLabelElement>) {
-  return <label className={cn('mb-1.5 block text-sm font-bold text-zinc-100', className)} {...props} />;
+export function Label({
+  className,
+  ...props
+}: LabelHTMLAttributes<HTMLLabelElement>) {
+  return (
+    <label
+      className={cn("mb-1.5 block text-sm font-bold text-zinc-100", className)}
+      {...props}
+    />
+  );
 }
 
 type OpcaoSelect = {
@@ -38,18 +49,27 @@ type OpcaoSelect = {
   disabled?: boolean;
 };
 
-function extrairOpcoes(children: SelectHTMLAttributes<HTMLSelectElement>['children']): OpcaoSelect[] {
+function extrairOpcoes(
+  children: SelectHTMLAttributes<HTMLSelectElement>["children"],
+): OpcaoSelect[] {
   return Children.toArray(children)
     .filter(isValidElement)
     .map((child) => {
-      const props = child.props as { value?: string | number; children?: ReactNode; disabled?: boolean };
-      const value = props.value === undefined ? String(props.children ?? '') : String(props.value);
-      const label = Children.toArray(props.children).join('');
+      const props = child.props as {
+        value?: string | number;
+        children?: ReactNode;
+        disabled?: boolean;
+      };
+      const value =
+        props.value === undefined
+          ? String(props.children ?? "")
+          : String(props.value);
+      const label = Children.toArray(props.children).join("");
 
       return {
         value,
         label,
-        disabled: props.disabled
+        disabled: props.disabled,
       };
     });
 }
@@ -61,8 +81,14 @@ function extrairOpcoes(children: SelectHTMLAttributes<HTMLSelectElement>['childr
  * a identidade premium da interface. Este componente remove o <select> visível e usa
  * um input hidden para preservar o envio normal dos formulários/server actions.
  */
-type SelectProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'onChange' | 'value' | 'defaultValue' | 'type'> &
-  Pick<SelectHTMLAttributes<HTMLSelectElement>, 'onChange' | 'value' | 'defaultValue' | 'required'>;
+type SelectProps = Omit<
+  ButtonHTMLAttributes<HTMLButtonElement>,
+  "onChange" | "value" | "defaultValue" | "type"
+> &
+  Pick<
+    SelectHTMLAttributes<HTMLSelectElement>,
+    "onChange" | "value" | "defaultValue" | "required"
+  >;
 
 export function Select({
   children,
@@ -81,7 +107,12 @@ export function Select({
   const containerRef = useRef<HTMLDivElement>(null);
   const options = useMemo(() => extrairOpcoes(children), [children]);
   const isControlled = value !== undefined;
-  const valorInicial = String(value ?? defaultValue ?? options.find((option) => !option.disabled)?.value ?? '');
+  const valorInicial = String(
+    value ??
+      defaultValue ??
+      options.find((option) => !option.disabled)?.value ??
+      "",
+  );
   const [internalValue, setInternalValue] = useState(valorInicial);
   const [open, setOpen] = useState(false);
 
@@ -92,9 +123,14 @@ export function Select({
     options[0];
 
   useEffect(() => {
-    if (!isControlled && options.length > 0 && !options.some((option) => option.value === internalValue)) {
-      const primeiraOpcaoValida = options.find((option) => !option.disabled) ?? options[0];
-      setInternalValue(primeiraOpcaoValida?.value ?? '');
+    if (
+      !isControlled &&
+      options.length > 0 &&
+      !options.some((option) => option.value === internalValue)
+    ) {
+      const primeiraOpcaoValida =
+        options.find((option) => !option.disabled) ?? options[0];
+      setInternalValue(primeiraOpcaoValida?.value ?? "");
     }
   }, [internalValue, isControlled, options]);
 
@@ -106,24 +142,24 @@ export function Select({
     }
 
     function handleEscape(event: globalThis.KeyboardEvent) {
-      if (event.key === 'Escape') {
+      if (event.key === "Escape") {
         setOpen(false);
       }
     }
 
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleEscape);
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
 
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleEscape);
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
     };
   }, []);
 
   function dispararOnChange(option: OpcaoSelect) {
     onChange?.({
       target: { value: option.value, name },
-      currentTarget: { value: option.value, name }
+      currentTarget: { value: option.value, name },
     } as ChangeEvent<HTMLSelectElement>);
   }
 
@@ -141,26 +177,32 @@ export function Select({
   function navegarTeclado(event: KeyboardEvent<HTMLButtonElement>) {
     if (disabled) return;
 
-    if (event.key === 'Enter' || event.key === ' ') {
+    if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       setOpen((atual) => !atual);
       return;
     }
 
-    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
 
     event.preventDefault();
     const opcoesValidas = options.filter((option) => !option.disabled);
-    const indiceAtual = Math.max(0, opcoesValidas.findIndex((option) => option.value === selectedOption?.value));
-    const proximoIndice = event.key === 'ArrowDown'
-      ? Math.min(opcoesValidas.length - 1, indiceAtual + 1)
-      : Math.max(0, indiceAtual - 1);
+    const indiceAtual = Math.max(
+      0,
+      opcoesValidas.findIndex(
+        (option) => option.value === selectedOption?.value,
+      ),
+    );
+    const proximoIndice =
+      event.key === "ArrowDown"
+        ? Math.min(opcoesValidas.length - 1, indiceAtual + 1)
+        : Math.max(0, indiceAtual - 1);
 
     const proximaOpcao = opcoesValidas[proximoIndice];
     if (proximaOpcao) selecionarOpcao(proximaOpcao);
   }
 
-  const valorParaFormulario = selectedOption?.value ?? '';
+  const valorParaFormulario = selectedOption?.value ?? "";
 
   return (
     <div ref={containerRef} className="relative">
@@ -170,7 +212,7 @@ export function Select({
           name={name}
           value={valorParaFormulario}
           disabled={disabled}
-          data-required={required ? 'true' : undefined}
+          data-required={required ? "true" : undefined}
           readOnly
         />
       )}
@@ -184,15 +226,24 @@ export function Select({
         aria-expanded={open}
         className={cn(
           campoBase,
-          'group flex min-h-11 cursor-pointer items-center justify-between gap-3 bg-zinc-950/92 pr-3 text-left hover:border-brand-500/70 hover:bg-black/55 disabled:pointer-events-none',
-          open && 'border-brand-500 bg-black/55 ring-4 ring-brand-500/15',
-          className
+          "group flex min-h-11 cursor-pointer items-center justify-between gap-3 bg-zinc-950/92 pr-3 text-left hover:border-brand-500/70 hover:bg-black/55 disabled:pointer-events-none",
+          open && "border-brand-500 bg-black/55 ring-4 ring-brand-500/15",
+          className,
         )}
         onClick={() => setOpen((atual) => !atual)}
         onKeyDown={navegarTeclado}
       >
-        <span className="min-w-0 truncate">{selectedOption?.label || 'Selecione uma opção'}</span>
-        <span className={cn('shrink-0 text-brand-100 transition-transform duration-200', open && 'rotate-180')}>⌄</span>
+        <span className="min-w-0 truncate">
+          {selectedOption?.label || "Selecione uma opção"}
+        </span>
+        <span
+          className={cn(
+            "shrink-0 text-brand-100 transition-transform duration-200",
+            open && "rotate-180",
+          )}
+        >
+          ⌄
+        </span>
       </button>
 
       {open && (
@@ -212,13 +263,18 @@ export function Select({
                 aria-selected={selected}
                 disabled={option.disabled}
                 className={cn(
-                  'flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-zinc-200 transition hover:bg-brand-500/15 hover:text-white disabled:cursor-not-allowed disabled:opacity-50',
-                  selected && 'bg-brand-500 text-brand-950 hover:bg-brand-500 hover:text-brand-950'
+                  "flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-zinc-200 transition hover:bg-brand-500/15 hover:text-white disabled:cursor-not-allowed disabled:opacity-50",
+                  selected &&
+                    "bg-brand-500 text-brand-950 hover:bg-brand-500 hover:text-brand-950",
                 )}
                 onClick={() => selecionarOpcao(option)}
               >
                 <span className="min-w-0 truncate">{option.label}</span>
-                {selected && <span className="text-xs font-black uppercase tracking-[0.18em]">Atual</span>}
+                {selected && (
+                  <span className="text-xs font-black uppercase tracking-[0.18em]">
+                    Atual
+                  </span>
+                )}
               </button>
             );
           })}
@@ -228,6 +284,18 @@ export function Select({
   );
 }
 
-export function Textarea({ className, ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea className={cn(campoBase, 'min-h-24 resize-y leading-6 sm:min-h-28', className)} {...props} />;
+export function Textarea({
+  className,
+  ...props
+}: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return (
+    <textarea
+      className={cn(
+        campoBase,
+        "min-h-24 resize-y leading-6 sm:min-h-28",
+        className,
+      )}
+      {...props}
+    />
+  );
 }

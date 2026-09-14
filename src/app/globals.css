@@ -17,7 +17,7 @@
   color-scheme: dark;
   --fundo: #080706;
   --superficie: rgba(255, 255, 255, 0.06);
-  --linha: rgba(255, 255, 255, 0.10);
+  --linha: rgba(255, 255, 255, 0.1);
 }
 
 * {
@@ -33,8 +33,16 @@ body {
   margin: 0;
   min-height: 100vh;
   background:
-    radial-gradient(circle at top left, rgba(200, 144, 47, 0.15), transparent 34rem),
-    radial-gradient(circle at bottom right, rgba(255, 255, 255, 0.07), transparent 28rem),
+    radial-gradient(
+      circle at top left,
+      rgba(200, 144, 47, 0.15),
+      transparent 34rem
+    ),
+    radial-gradient(
+      circle at bottom right,
+      rgba(255, 255, 255, 0.07),
+      transparent 28rem
+    ),
     #080706;
   color: #fff;
   text-rendering: geometricPrecision;
@@ -63,7 +71,7 @@ a {
 .fundo-premium {
   background:
     linear-gradient(180deg, rgba(8, 7, 6, 0.68), rgba(8, 7, 6, 0.98)),
-    radial-gradient(circle at top, rgba(200, 144, 47, 0.20), transparent 34rem),
+    radial-gradient(circle at top, rgba(200, 144, 47, 0.2), transparent 34rem),
     #080706;
 }
 
@@ -76,15 +84,22 @@ a {
 
 .grade-barbearia {
   background-image:
-    linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px),
-    url('/pattern-barbearia.svg');
-  background-size: 42px 42px, 42px 42px, 160px 160px;
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    url("/pattern-barbearia.svg");
+  background-size:
+    42px 42px,
+    42px 42px,
+    160px 160px;
 }
 
 .hero-vidro {
   background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.045)),
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.13),
+      rgba(255, 255, 255, 0.045)
+    ),
     rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.12);
   box-shadow: var(--shadow-premium);
@@ -103,7 +118,12 @@ a {
   width: 55%;
   height: 320%;
   transform: rotate(28deg);
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.22), transparent);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.22),
+    transparent
+  );
   transition: transform 700ms ease;
 }
 

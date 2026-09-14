@@ -1,8 +1,12 @@
-export type PerfilRole = 'client' | 'admin' | 'barber';
-export type AuthProvider = 'google' | 'phone' | 'manual';
-export type AppointmentStatus = 'pending' | 'confirmed' | 'completed' | 'canceled' | 'no_show';
-export type PaymentMethod = 'dinheiro' | 'pix' | 'cartao_credito' | 'cartao_debito' | 'outro';
-export type PaymentStatus = 'pending' | 'paid' | 'canceled';
+export type PerfilRole = "client" | "admin" | "barber";
+export type AuthProvider = "google" | "phone" | "manual";
+export type AppointmentStatus =
+  "pending" | "confirmed" | "completed" | "canceled" | "no_show";
+export type PaymentMethod =
+  "dinheiro" | "pix" | "cartao_credito" | "cartao_debito" | "outro";
+export type PaymentStatus = "pending" | "paid" | "canceled";
+export type MembershipRole = "owner" | "manager" | "staff";
+export type LoyaltyEarningMode = "visit" | "amount" | "service";
 
 export type Profile = {
   id: string;
@@ -16,27 +20,38 @@ export type Profile = {
   updated_at: string;
   last_login_at: string | null;
   is_active: boolean;
+  is_platform_admin?: boolean;
 };
 
-export type BusinessSettings = {
+export type Barbershop = {
   id: string;
-  business_name: string;
-  address: string | null;
+  organization_id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  logo_url: string | null;
+  cover_url: string | null;
+  primary_color: string;
+  secondary_color: string;
+  timezone: string;
+  is_active: boolean;
+};
+
+export type Customer = {
+  id: string;
+  barbershop_id: string;
+  profile_id: string | null;
+  full_name: string;
+  email: string | null;
   phone: string | null;
-  whatsapp: string | null;
-  instagram: string | null;
-  cancellation_limit_hours: number;
-  booking_advance_days: number;
-  // Cores de marca do tenant (whitelabel). Nulas = usa o padrão do produto —
-  // ver src/lib/theme/paleta-marca.ts para a lógica de fallback.
-  primary_color: string | null;
-  primary_color_dark: string | null;
-  created_at: string;
-  updated_at: string;
+  birth_date: string | null;
+  allow_email: boolean;
+  allow_whatsapp: boolean;
 };
 
 export type Service = {
   id: string;
+  barbershop_id: string;
   name: string;
   description: string | null;
   price: number;
@@ -49,6 +64,7 @@ export type Service = {
 
 export type Barber = {
   id: string;
+  barbershop_id: string;
   profile_id: string | null;
   name: string;
   bio: string | null;
@@ -61,6 +77,7 @@ export type Barber = {
 
 export type BusinessHour = {
   id: string;
+  barbershop_id: string;
   barber_id: string;
   day_of_week: number;
   start_time: string;
@@ -74,6 +91,7 @@ export type BusinessHour = {
 
 export type BlockedSlot = {
   id: string;
+  barbershop_id: string;
   barber_id: string;
   start_at: string;
   end_at: string;
@@ -83,9 +101,36 @@ export type BlockedSlot = {
 };
 
 export type BusySlot = {
+  barbershop_id?: string;
   barber_id: string;
   start_at: string;
   end_at: string;
+};
+
+export type LoyaltyProgram = {
+  id: string;
+  barbershop_id: string;
+  name: string;
+  earning_mode: LoyaltyEarningMode;
+  points_per_visit: number;
+  points_per_currency: number;
+  is_active: boolean;
+};
+
+export type LoyaltyReward = {
+  id: string;
+  barbershop_id: string;
+  name: string;
+  reward_type:
+    | "free_service"
+    | "fixed_discount"
+    | "percentage_discount"
+    | "gift"
+    | "custom";
+  service_id: string | null;
+  points_cost: number;
+  discount_value: number | null;
+  is_active: boolean;
 };
 
 export type AvailableSlot = {

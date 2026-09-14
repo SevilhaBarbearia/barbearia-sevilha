@@ -5,6 +5,8 @@
  */
 export type FormAction = (formData: FormData) => void | Promise<void>;
 
-export function asFormAction(action: (formData: FormData) => unknown | Promise<unknown>): FormAction {
+export function asFormAction(
+  action: (formData: FormData) => unknown | Promise<unknown>,
+): FormAction {
   return action as FormAction;
 }

@@ -1,48 +1,31 @@
-# Acesso administrativo separado
+# Acesso administrativo
 
-## Uso diário
+Clientes entram com Google em `/{slug}/login`. Proprietários e gestores usam e-mail e senha em `/admin/login`. Uma sessão Google não concede poderes administrativos.
 
-- Clientes: `/login`, com Google, para suas próprias reservas.
-- Administração: `/admin/login`, com e-mail e senha de uma conta administrativa previamente criada.
-- Painel: `/admin`, com reservas de todos os clientes, agenda, serviços, barbeiros, horários, pagamentos e faturamento.
-- O botão “Sair da administração” encerra a sessão neste navegador.
+## Primeiro administrador da plataforma
 
-Não existe cadastro público de administradores nem senha padrão no código.
-Conhecer o endereço `/admin` não concede acesso. Conta comum, conta inativa ou sessão somente Google é encaminhada ao login administrativo. A migração também exige senha nas políticas do banco que usam `is_admin()`.
-Cliente e administrador usam a mesma sessão do Supabase no navegador: entrar em outra conta substitui a sessão atual. Para usar ambos ao mesmo tempo, abra outro perfil de navegador.
-
-## Implantação — uma vez pelo responsável técnico
-
-1. No Supabase, habilite autenticação por e-mail/senha, mantendo o Google para clientes.
-2. Execute `supabase/migrations/008_acesso_administrativo.sql` no SQL Editor, depois das migrações 001 a 007. Não recrie tabelas nem apague reservas.
-3. Em Authentication > Users, crie a conta específica do responsável com e-mail próprio e senha forte e exclusiva. Confirme o e-mail pela ferramenta administrativa se necessário. Use um e-mail diferente das contas de clientes.
-4. Copie o UUID dessa conta em Authentication > Users. No SQL Editor, substitua o marcador abaixo pelo UUID real e execute:
+Crie sua conta com e-mail e senha em Supabase Authentication > Users. Copie o UUID dessa conta e execute no SQL Editor:
 
 ```sql
 update public.profiles
-set role = 'admin', provider = 'manual', is_active = true
-where id = 'COLE_O_UUID_DA_CONTA_ADMIN'::uuid
-returning id, email, role, is_active;
+set role = 'admin', is_platform_admin = true, is_active = true, updated_at = now()
+where id = 'UUID_DA_SUA_CONTA'::uuid;
 ```
 
-A consulta deve retornar exatamente a conta escolhida. Se não retornar nenhuma linha, confira se as migrações anteriores e o trigger `on_auth_user_created` estão instalados. Não use o e-mail editável de `profiles` como critério de concessão.
+Confirme que exatamente a conta desejada foi atualizada. A promoção administrativa nunca é feita pelo formulário público.
 
-5. Publique o projeto atualizado na Vercel com as variáveis públicas do Supabase existentes. A senha não entra no `.env`, no código ou no repositório.
-6. Entre em `/admin/login` usando a conta criada. Entregue ao cliente apenas URL, e-mail e senha por canal privado. O cliente não precisa acessar Supabase nem executar SQL.
+## Sevilha existente
 
-Administradores antigos que entravam pelo Google precisarão de uma conta com senha para continuar administrando. Esta migração não remove papéis antigos automaticamente; revise e desative contas que não devem mais ter acesso.
+A migration `009` associa os perfis administrativos ativos anteriores à Sevilha. O primeiro Platform Admin precisa ser promovido separadamente pelo SQL acima.
 
-## Validação em homologação
+## Nova barbearia e unidades
 
-1. Sem sessão: `/admin` e `/admin/reservas` devem levar a `/admin/login`.
-2. Cliente Google: mesmas URLs não mostram dados administrativos; suas reservas continuam acessíveis na área do cliente.
-3. Conta comum com senha: login administrativo deve recusar acesso.
-4. Admin ativo com senha: painel lista reservas de todos os clientes; ações de administração continuam disponíveis.
-5. Mesmo admin autenticado apenas pelo Google: não obtém acesso administrativo.
-6. Admin inativo: não acessa o painel, mesmo com senha correta.
-7. Após sair: abrir novamente uma URL administrativa deve pedir login.
-8. Como cliente, tentativas via API de inserir perfil admin, mudar `role` ou `is_active` devem falhar.
+1. Crie a conta do proprietário com e-mail e senha em Supabase Auth.
+2. Entre em `/plataforma` com sua conta administrativa.
+3. Preencha nome, slug e o e-mail cadastrado no Auth.
+4. Escolha “Nova organização” para uma nova empresa ou a organização existente para outra unidade do mesmo dono.
+5. Entregue `/{slug}` e `/admin/{slug}`.
 
-Recuperação de senha nesta versão é feita pelo responsável técnico com as ferramentas administrativas do Supabase; não há fluxo público de recuperação implementado.
+A criação é transacional. Inclui unidade, associação do proprietário, configurações, plano de teste, fidelidade e modelos de mensagem. Uma organização existente só pode receber unidade com o mesmo proprietário.
 
-Referências: https://supabase.com/docs/guides/auth/jwt-fields e https://supabase.com/docs/reference/javascript/auth-getclaims.
+O proprietário configura catálogo, imagens, expediente, regras e mensagens em seu painel. A seleção `/admin/selecionar` mostra as unidades permitidas. O cadastro por conta própria, convites por e-mail e cobrança recorrente não fazem parte desta versão.

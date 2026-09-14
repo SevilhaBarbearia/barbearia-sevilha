@@ -1,53 +1,52 @@
-import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
-import { calcularHorariosDisponiveis } from '@/lib/agendamentos/horarios';
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { createClient } from "@/lib/supabase/server";
+
+const schema = z.object({
+  barberId: z.string().uuid(),
+  serviceId: z.string().uuid(),
+  data: z.string().date(),
+  slug: z
+    .string()
+    .max(80)
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+});
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const barberId = searchParams.get('barberId');
-  const serviceId = searchParams.get('serviceId');
-  const data = searchParams.get('data');
-
-  if (!barberId || !serviceId || !data) {
-    return NextResponse.json({ horarios: [], erro: 'Parâmetros obrigatórios ausentes.' }, { status: 400 });
+  const parsed = schema.safeParse(
+    Object.fromEntries(new URL(request.url).searchParams),
+  );
+  if (!parsed.success)
+    return NextResponse.json(
+      { horarios: [], erro: "Informe uma data válida e os dados da reserva." },
+      { status: 400 },
+    );
+  try {
+    const supabase = await createClient();
+    const { data: shop, error: shopError } = await supabase
+      .from("barbershops")
+      .select("id")
+      .eq("slug", parsed.data.slug)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (shopError) throw shopError;
+    if (!shop) return NextResponse.json({ horarios: [] }, { status: 404 });
+    // Eu calculo a disponibilidade no fuso da barbearia, independentemente do servidor.
+    const { data, error } = await supabase.rpc("available_slots", {
+      tenant: shop.id,
+      barber: parsed.data.barberId,
+      service: parsed.data.serviceId,
+      day: parsed.data.data,
+    });
+    if (error) throw error;
+    return NextResponse.json({ horarios: data ?? [] });
+  } catch {
+    return NextResponse.json(
+      {
+        horarios: [],
+        erro: "Não foi possível consultar os horários. Tente novamente.",
+      },
+      { status: 503 },
+    );
   }
-
-  const supabase = await createClient();
-
-  const [{ data: service }, { data: relation }] = await Promise.all([
-    supabase
-      .from('services')
-      .select('duration_minutes')
-      .eq('id', serviceId)
-      .eq('is_active', true)
-      .single(),
-    supabase
-      .from('barber_services')
-      .select('id')
-      .eq('barber_id', barberId)
-      .eq('service_id', serviceId)
-      .eq('is_active', true)
-      .maybeSingle()
-  ]);
-
-  if (!service || !relation) return NextResponse.json({ horarios: [] });
-
-  const dataInicio = new Date(`${data}T00:00:00`);
-  const dataFim = new Date(`${data}T23:59:59`);
-
-  const [{ data: expediente }, { data: ocupados }, { data: bloqueados }] = await Promise.all([
-    supabase.from('business_hours').select('*').eq('barber_id', barberId).eq('is_active', true),
-    supabase.from('appointment_busy_slots').select('*').eq('barber_id', barberId).gte('start_at', dataInicio.toISOString()).lte('start_at', dataFim.toISOString()),
-    supabase.from('blocked_busy_slots').select('*').eq('barber_id', barberId).gte('start_at', dataInicio.toISOString()).lte('start_at', dataFim.toISOString())
-  ]);
-
-  const horarios = calcularHorariosDisponiveis({
-    dataISO: `${data}T00:00:00`,
-    duracaoMinutos: Number(service.duration_minutes),
-    expediente: expediente ?? [],
-    ocupados: ocupados ?? [],
-    bloqueados: bloqueados ?? []
-  });
-
-  return NextResponse.json({ horarios });
 }
