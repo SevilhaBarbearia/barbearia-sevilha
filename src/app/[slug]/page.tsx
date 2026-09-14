@@ -33,12 +33,14 @@ type HomeData = {
     duration_minutes: number;
     image_url: string | null;
   }>;
+
   barbers: Array<{
     id: string;
     name: string;
     bio: string | null;
     photo_url: string | null;
   }>;
+
   settings:
     | {
         business_name?: string | null;
@@ -55,6 +57,7 @@ type HomeData = {
 
 function capitalize(value: string) {
   if (!value) return value;
+
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
@@ -90,6 +93,7 @@ function LegacyHome({
   data: HomeData;
 }) {
   const { services, barbers, settings } = data;
+
   const reserveUrl = `/${barbershop.slug}/reservar`;
   const coverUrl = settings?.cover_url || barbershop.cover_url;
 
@@ -140,7 +144,8 @@ function LegacyHome({
               src={coverUrl || "/hero-barbearia.svg"}
               alt={`Ambiente da ${barbershop.name}`}
               fill
-              className="object-cover"
+              sizes="(max-width: 1024px) 100vw, 50vw"
+              className={coverUrl ? "object-cover object-center" : "object-contain p-8"}
               priority
             />
           </div>
@@ -169,13 +174,16 @@ function LegacyHome({
                     src={service.image_url}
                     alt={service.name}
                     fill
-                    className="object-cover"
+                    sizes="(max-width: 768px) 100vw, 33vw"
+                    className="object-cover object-center"
                   />
                 </div>
               )}
 
               <div className="flex items-start justify-between gap-3">
-                <CardTitle>{service.name}</CardTitle>
+                <CardTitle>
+                  {service.name}
+                </CardTitle>
 
                 <span className="shrink-0 rounded-full border border-white/10 px-3 py-1 text-xs text-brand-100">
                   <Clock3 className="mr-1 inline h-3 w-3" />
@@ -226,12 +234,15 @@ function LegacyHome({
                     src={barber.photo_url}
                     alt={barber.name}
                     fill
-                    className="object-cover"
+                    sizes="(max-width: 768px) 100vw, 33vw"
+                    className="object-cover object-center"
                   />
                 </div>
               )}
 
-              <CardTitle>{barber.name}</CardTitle>
+              <CardTitle>
+                {barber.name}
+              </CardTitle>
 
               <CardDescription>
                 {barber.bio || "Profissional disponível para agendamento."}
@@ -255,7 +266,9 @@ function LegacyHome({
       >
         <Card className="grid gap-6 bg-gradient-to-br from-white/[0.09] to-brand-500/[0.08] md:grid-cols-[1fr_auto] md:items-center">
           <div>
-            <CardTitle>{settings?.business_name || barbershop.name}</CardTitle>
+            <CardTitle>
+              {settings?.business_name || barbershop.name}
+            </CardTitle>
 
             <div className="mt-4 grid gap-2 text-sm text-zinc-300">
               {settings?.address && (
@@ -296,6 +309,7 @@ async function WarmPremiumHome({
   const reserveUrl = `/${barbershop.slug}/reservar`;
   const coverUrl = settings?.cover_url || barbershop.cover_url;
   const logoUrl = settings?.logo_url || barbershop.logo_url;
+  const brandName = settings?.business_name || barbershop.name;
 
   const nextSlot = await getNextAvailableSlot({
     barbershopId: barbershop.id,
@@ -307,6 +321,7 @@ async function WarmPremiumHome({
     : null;
 
   const publicBaseUrl = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "");
+
   const publicUrl = publicBaseUrl
     ? `${publicBaseUrl}/${barbershop.slug}`
     : undefined;
@@ -314,7 +329,7 @@ async function WarmPremiumHome({
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "LocalBusiness",
-    name: settings?.business_name || barbershop.name,
+    name: brandName,
     description:
       settings?.description ||
       barbershop.description ||
@@ -338,32 +353,37 @@ async function WarmPremiumHome({
 
       <NavPublica
         slug={barbershop.slug}
-        name={barbershop.name}
+        name={brandName}
         logoUrl={logoUrl}
       />
 
-      <section className="relative">
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-[32rem] bg-[radial-gradient(circle_at_20%_0%,var(--tenant-accent-soft),transparent_55%)]" />
-
-        <div className="relative mx-auto grid max-w-7xl gap-10 px-5 pb-14 pt-10 sm:px-6 sm:pb-20 sm:pt-16 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:gap-14 lg:py-24">
+      <section className="ui-barber-ambient relative">
+        <div className="relative z-10 mx-auto grid max-w-7xl gap-10 px-5 pb-14 pt-10 sm:px-6 sm:pb-20 sm:pt-16 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:gap-14 lg:py-20">
           <div>
             <Badge>
               <Sparkles className="h-3.5 w-3.5" />
               Atendimento com hora marcada
             </Badge>
 
-            <h1 className="ui-display mt-7 max-w-3xl font-extrabold text-[var(--text)]">
+            <p className="mt-6 text-lg font-extrabold tracking-[-0.02em] text-[var(--text)] sm:text-xl">
+              {brandName}
+            </p>
+
+            <h1 className="ui-display mt-3 max-w-3xl font-extrabold text-[var(--text)]">
               Seu próximo corte começa com um horário bem escolhido.
             </h1>
 
             <p className="ui-body mt-6 max-w-2xl text-[var(--text-muted)]">
               {settings?.description ||
                 barbershop.description ||
-                `${barbershop.name}: escolha o serviço, o profissional e o melhor horário para você.`}
+                `${brandName}: escolha o serviço, o profissional e o melhor horário para você.`}
             </p>
 
             <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-              <ButtonLink href={reserveUrl} className="w-full sm:w-auto">
+              <ButtonLink
+                href={reserveUrl}
+                className="w-full sm:w-auto"
+              >
                 <CalendarCheck className="h-4 w-4" />
                 Reservar horário
                 <ArrowRight className="h-4 w-4" />
@@ -384,17 +404,19 @@ async function WarmPremiumHome({
                 <CheckCircle2 className="h-4 w-4 text-[var(--tenant-accent)]" />
                 Reserva online
               </span>
+
               <span className="inline-flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 text-[var(--tenant-accent)]" />
                 Escolha seu profissional
               </span>
+
               <span className="inline-flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 text-[var(--tenant-accent)]" />
                 Horários em tempo real
               </span>
             </div>
 
-            <div className="mt-9 max-w-xl rounded-[1.5rem] border border-[var(--border)] bg-white p-4 shadow-[0_18px_50px_rgba(59,43,24,0.08)] sm:p-5">
+            <div className="mt-9 max-w-xl rounded-[1.5rem] border border-[var(--border)] bg-white/95 p-4 shadow-[0_18px_50px_rgba(59,43,24,0.08)] backdrop-blur-sm sm:p-5">
               <div className="flex items-start gap-4">
                 <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[var(--tenant-accent-soft)] text-[var(--tenant-accent)]">
                   <Clock3 className="h-5 w-5" />
@@ -410,6 +432,7 @@ async function WarmPremiumHome({
                       <p className="mt-1 text-lg font-extrabold text-[var(--text)]">
                         {formattedNextSlot.day}, às {formattedNextSlot.time}
                       </p>
+
                       <p className="mt-1 text-sm text-[var(--text-muted)]">
                         {nextSlot.barberName} · {nextSlot.serviceName}
                       </p>
@@ -419,6 +442,7 @@ async function WarmPremiumHome({
                       <p className="mt-1 text-lg font-extrabold text-[var(--text)]">
                         Consulte a agenda disponível
                       </p>
+
                       <p className="mt-1 text-sm text-[var(--text-muted)]">
                         Veja os horários livres para o serviço que você deseja.
                       </p>
@@ -437,43 +461,57 @@ async function WarmPremiumHome({
             </div>
           </div>
 
-          <div className="relative">
-            <div className="absolute -left-10 -top-10 h-32 w-32 rounded-full bg-[var(--tenant-accent-soft)] blur-3xl" />
+          <div className="relative lg:pl-3">
+            <div className="absolute -left-6 -top-8 h-28 w-28 rounded-full bg-[var(--tenant-accent-soft)] blur-3xl" />
 
-            <div className="relative overflow-hidden rounded-[2rem] border border-[var(--border)] bg-white p-2.5 shadow-[0_32px_90px_rgba(68,48,26,0.16)] sm:p-3">
-              <div className="relative aspect-[4/5] overflow-hidden rounded-[1.55rem] bg-[#252623] sm:aspect-[5/4] lg:aspect-[4/5]">
+            <div className="relative overflow-hidden rounded-[2rem] border border-[var(--border)] bg-white p-2.5 shadow-[0_28px_75px_rgba(68,48,26,0.14)] sm:p-3">
+              <div className="relative aspect-[16/10] max-h-[34rem] overflow-hidden rounded-[1.55rem] bg-[#252623] sm:aspect-[16/9] lg:aspect-[4/3]">
                 <Image
                   src={coverUrl || "/hero-barbearia.svg"}
-                  alt={`Ambiente da ${barbershop.name}`}
+                  alt={`Ambiente da ${brandName}`}
                   fill
-                  className="object-cover"
+                  sizes="(max-width: 1024px) 100vw, 48vw"
+                  className={
+                    coverUrl
+                      ? "object-cover object-center"
+                      : "object-contain p-8 sm:p-12"
+                  }
                   priority
                 />
 
-                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent p-5 pt-20 text-white sm:p-7">
-                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-white/70">
-                    {settings?.business_name || barbershop.name}
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/28 to-transparent p-5 pt-20 text-white sm:p-7">
+                  <p className="text-sm font-extrabold tracking-[-0.01em] text-white">
+                    {brandName}
                   </p>
-                  <p className="mt-2 max-w-md text-xl font-extrabold leading-tight sm:text-2xl">
+
+                  <p className="mt-2 max-w-md text-lg font-extrabold leading-tight text-white sm:text-2xl">
                     Cuidado nos detalhes. Facilidade desde o agendamento.
                   </p>
                 </div>
               </div>
             </div>
 
-            <div className="absolute -bottom-5 -left-3 hidden rounded-2xl border border-[var(--border)] bg-white px-5 py-4 shadow-[0_18px_45px_rgba(68,48,26,0.12)] sm:block">
-              <div className="flex items-center gap-3">
-                <span className="grid h-10 w-10 place-items-center rounded-xl bg-[var(--tenant-accent-soft)] text-[var(--tenant-accent)]">
-                  <UsersRound className="h-5 w-5" />
-                </span>
-                <div>
-                  <p className="text-lg font-extrabold">{barbers.length || 0}</p>
-                  <p className="text-xs font-semibold text-[var(--text-muted)]">
-                    profissionais disponíveis
-                  </p>
+            {barbers.length > 0 && (
+              <div className="absolute -bottom-5 -left-1 hidden rounded-2xl border border-[var(--border)] bg-white px-5 py-4 shadow-[0_18px_45px_rgba(68,48,26,0.12)] sm:block">
+                <div className="flex items-center gap-3">
+                  <span className="grid h-10 w-10 place-items-center rounded-xl bg-[var(--tenant-accent-soft)] text-[var(--tenant-accent)]">
+                    <UsersRound className="h-5 w-5" />
+                  </span>
+
+                  <div>
+                    <p className="text-lg font-extrabold">
+                      {barbers.length}
+                    </p>
+
+                    <p className="text-xs font-semibold text-[var(--text-muted)]">
+                      {barbers.length === 1
+                        ? "profissional disponível"
+                        : "profissionais disponíveis"}
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       </section>
@@ -513,7 +551,8 @@ async function WarmPremiumHome({
                       src={service.image_url}
                       alt={service.name}
                       fill
-                      className="object-cover transition duration-500 group-hover:scale-[1.03]"
+                      sizes="(max-width: 768px) 100vw, (max-width: 1280px) 50vw, 33vw"
+                      className="object-cover object-center transition duration-500 group-hover:scale-[1.03]"
                     />
                   </div>
                 ) : (
@@ -569,7 +608,10 @@ async function WarmPremiumHome({
         </div>
       </section>
 
-      <section id="barbeiros" className="bg-[#F1EDE6]">
+      <section
+        id="barbeiros"
+        className="bg-[#F1EDE6]"
+      >
         <div className="mx-auto max-w-7xl px-5 py-16 sm:px-6 sm:py-20">
           <div className="mx-auto max-w-2xl text-center">
             <Badge>
@@ -599,7 +641,8 @@ async function WarmPremiumHome({
                       src={barber.photo_url}
                       alt={barber.name}
                       fill
-                      className="object-cover"
+                      sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                      className="object-cover object-center"
                     />
                   ) : (
                     <div className="grid h-full place-items-center bg-[linear-gradient(145deg,#252623,#373832)]">
@@ -646,11 +689,14 @@ async function WarmPremiumHome({
         </div>
       </section>
 
-      <section id="contato" className="bg-[#252623] text-white">
+      <section
+        id="contato"
+        className="bg-[#252623] text-white"
+      >
         <div className="mx-auto grid max-w-7xl gap-10 px-5 py-16 sm:px-6 sm:py-20 lg:grid-cols-[1fr_auto] lg:items-center">
           <div>
-            <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-white/55">
-              {settings?.business_name || barbershop.name}
+            <p className="text-sm font-extrabold text-white">
+              {brandName}
             </p>
 
             <h2 className="ui-h2 mt-4 max-w-2xl font-extrabold text-white">
@@ -675,7 +721,10 @@ async function WarmPremiumHome({
           </div>
 
           <div className="lg:text-right">
-            <ButtonLink href={reserveUrl} className="w-full sm:w-auto">
+            <ButtonLink
+              href={reserveUrl}
+              className="w-full sm:w-auto"
+            >
               <CalendarCheck className="h-4 w-4" />
               Agendar agora
               <ArrowRight className="h-4 w-4" />
@@ -719,12 +768,14 @@ export default async function BarbershopHomePage({
         .eq("barbershop_id", barbershop.id)
         .eq("is_active", true)
         .order("price"),
+
       supabase
         .from("barbers")
         .select("*")
         .eq("barbershop_id", barbershop.id)
         .eq("is_active", true)
         .order("name"),
+
       supabase
         .from("business_settings")
         .select("*")
@@ -739,8 +790,18 @@ export default async function BarbershopHomePage({
   };
 
   if (uiVersion === "legacy") {
-    return <LegacyHome barbershop={barbershop} data={data} />;
+    return (
+      <LegacyHome
+        barbershop={barbershop}
+        data={data}
+      />
+    );
   }
 
-  return <WarmPremiumHome barbershop={barbershop} data={data} />;
+  return (
+    <WarmPremiumHome
+      barbershop={barbershop}
+      data={data}
+    />
+  );
 }
