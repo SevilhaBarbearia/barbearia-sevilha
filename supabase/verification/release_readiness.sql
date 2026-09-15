@@ -1,7 +1,7 @@
 -- release_readiness.sql
 -- SOMENTE LEITURA.
 -- Eu uso este arquivo depois das migrations para confirmar funções,
--- políticas e integridade multi-tenant sem alterar nenhum dado.
+-- políticas, rollout e integridade multi-tenant sem alterar nenhum dado.
 
 -- 1. Objetos críticos esperados.
 select
@@ -32,6 +32,22 @@ select
   'cancel_my_appointment',
   to_regprocedure(
     'public.cancel_my_appointment(uuid,text)'
+  ) is not null
+
+union all
+
+select
+  'check_current_app_session',
+  to_regprocedure(
+    'public.check_current_app_session()'
+  ) is not null
+
+union all
+
+select
+  'touch_current_app_session',
+  to_regprocedure(
+    'public.touch_current_app_session()'
   ) is not null;
 
 
@@ -47,7 +63,19 @@ select
   ) as ok;
 
 
--- 3. Policies críticas.
+-- 3. Rollout individual por tenant.
+select
+  'tenant_ui_version_column' as check_name,
+  exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'barbershops'
+      and column_name = 'ui_version'
+  ) as ok;
+
+
+-- 4. Policies críticas.
 select
   tablename,
   policyname
@@ -70,7 +98,7 @@ order by
   policyname;
 
 
--- 4. Nenhuma reserva pode apontar para entidade de outro tenant.
+-- 5. Nenhuma reserva pode apontar para entidade de outro tenant.
 select
   'appointment_customer_tenant_mismatch'
     as check_name,
@@ -115,12 +143,13 @@ where p.barbershop_id <>
   a.barbershop_id;
 
 
--- 5. Inventário para o canary de múltiplos tenants.
+-- 6. Inventário para o canary de múltiplos tenants.
 select
   b.id,
   b.slug,
   b.name,
   b.is_active,
+  b.ui_version,
   count(m.id) filter (
     where m.is_active
   ) as active_members
@@ -132,6 +161,7 @@ group by
   b.id,
   b.slug,
   b.name,
-  b.is_active
+  b.is_active,
+  b.ui_version
 order by
   b.created_at;

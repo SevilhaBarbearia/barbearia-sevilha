@@ -23,6 +23,14 @@ const INACTIVITY_TIMEOUT_MS =
 const ACTIVITY_WRITE_THROTTLE_MS =
   15 * 1000;
 
+/*
+ * Eu não envio um request para cada movimento do usuário.
+ * Um heartbeat por minuto deixa a validação do servidor próxima dos
+ * 30 minutos reais sem criar centenas de writes desnecessários.
+ */
+const SERVER_HEARTBEAT_THROTTLE_MS =
+  60 * 1000;
+
 const ACTIVITY_STORAGE_KEY =
   "barbearia:last-activity:v1";
 
@@ -216,6 +224,12 @@ export function AuthProvider({
   const lastActivityWrite =
     useRef(0);
 
+  const lastServerHeartbeat =
+    useRef(0);
+
+  const heartbeatInFlight =
+    useRef(false);
+
   useEffect(() => {
     let disposed =
       false;
@@ -276,6 +290,69 @@ export function AuthProvider({
       redirecionarDepoisDaExpiracao();
     }
 
+    async function registrarAtividadeNoServidor(
+      force = false,
+    ) {
+      if (
+        !currentUser.current ||
+        signingOut.current ||
+        heartbeatInFlight.current
+      ) {
+        return;
+      }
+
+      const timestamp =
+        agora();
+
+      if (
+        !force &&
+        timestamp -
+          lastServerHeartbeat.current <
+          SERVER_HEARTBEAT_THROTTLE_MS
+      ) {
+        return;
+      }
+
+      heartbeatInFlight.current =
+        true;
+
+      try {
+        const response =
+          await fetch(
+            "/api/auth/activity",
+            {
+              method: "POST",
+              cache: "no-store",
+              credentials:
+                "same-origin",
+              keepalive: true,
+            },
+          );
+
+        if (
+          response.status ===
+          401
+        ) {
+          await expirarSessao();
+          return;
+        }
+
+        if (response.ok) {
+          lastServerHeartbeat.current =
+            timestamp;
+        }
+      } catch {
+        /*
+         * Falha de rede não renova a atividade do servidor.
+         * Assim a segurança continua fail-closed: se a falha persistir,
+         * o próximo request autenticado será recusado após o timeout.
+         */
+      } finally {
+        heartbeatInFlight.current =
+          false;
+      }
+    }
+
     function registrarAtividade() {
       if (
         !currentUser.current
@@ -304,6 +381,13 @@ export function AuthProvider({
       salvarUltimaAtividade(
         timestamp,
       );
+
+      /*
+       * A autoridade do timeout agora é o servidor.
+       * O heartbeat registra atividade humana real sem considerar
+       * refresh automático de token como uso da aplicação.
+       */
+      void registrarAtividadeNoServidor();
     }
 
     async function verificarInatividade() {
@@ -354,10 +438,22 @@ export function AuthProvider({
        */
       if (!last) {
         salvarUltimaAtividade();
+        await registrarAtividadeNoServidor(
+          true,
+        );
         return;
       }
 
       await verificarInatividade();
+
+      if (
+        !signingOut.current &&
+        currentUser.current
+      ) {
+        await registrarAtividadeNoServidor(
+          true,
+        );
+      }
     }
 
     void inicializar();
@@ -390,6 +486,10 @@ export function AuthProvider({
               false;
 
             salvarUltimaAtividade();
+
+            void registrarAtividadeNoServidor(
+              true,
+            );
           }
 
           if (
@@ -397,6 +497,8 @@ export function AuthProvider({
             "SIGNED_OUT"
           ) {
             limparUltimaAtividade();
+            lastServerHeartbeat.current =
+              0;
           }
 
           /*
@@ -450,7 +552,9 @@ export function AuthProvider({
       void verificarInatividade().then(
         () => {
           if (
-            !expirouPorInatividade()
+            !expirouPorInatividade() &&
+            currentUser.current &&
+            !signingOut.current
           ) {
             registrarAtividade();
           }

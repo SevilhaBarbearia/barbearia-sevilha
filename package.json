@@ -12,8 +12,9 @@
     "test:admin": "node --test tests/admin-policy.test.mjs",
     "test:ownership": "node --test tests/customer-ownership.test.mjs",
     "test:release": "node --test tests/release-readiness.test.mjs",
+    "test:rollout": "node --test tests/tenant-ui-rollout.test.mjs",
     "validate": "npm run typecheck && npm test && npm run build",
-    "release:check": "npm run validate",
+    "release:check": "npm run test:rollout && npm run validate",
     "smoke:prod": "node scripts/smoke-production.mjs",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" next.config.ts",
     "test:db": "node tests/database.test.mjs"
@@ -21,7 +22,6 @@
   "dependencies": {
     "@supabase/ssr": "0.12.7",
     "@supabase/supabase-js": "2.116.0",
-    "@vercel/global-config": "^1.5.1",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "date-fns": "4.4.0",

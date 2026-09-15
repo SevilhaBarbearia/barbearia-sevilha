@@ -431,14 +431,23 @@ export function ReservaForm({
                 autoComplete="email"
                 placeholder="Opcional"
               />
+
+              {!authenticated && (
+                <p className="mt-2 text-xs leading-5 text-[var(--text-muted)]">
+                  Para esta reserva aparecer automaticamente na sua conta
+                  depois, informe o mesmo e-mail usado no login Google.
+                </p>
+              )}
             </div>
           </div>
 
           {!authenticated && (
             <p className="mt-4 flex items-start gap-2 text-sm leading-6 text-[var(--text-muted)]">
               <ShieldCheck className="mt-1 h-4 w-4 shrink-0 text-[var(--tenant-accent)]" />
-              Você não precisa criar conta para reservar. O telefone identifica
-              sua reserva e o e-mail é opcional.
+              Você não precisa criar conta para reservar. Nome e telefone são
+              suficientes para concluir a reserva. O e-mail continua opcional,
+              mas uma reserva guest sem e-mail não é vinculada automaticamente
+              ao histórico de uma conta futura por segurança.
             </p>
           )}
         </div>
