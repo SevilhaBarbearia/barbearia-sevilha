@@ -13,80 +13,39 @@ import { requireBarbershopManager } from "@/features/tenancy/server";
 import { createClient } from "@/lib/supabase/server";
 import { formatarMoeda } from "@/lib/utils";
 
-type DashboardAppointment = {
+type AppointmentRow = {
   id: string;
   barber_id: string;
+  customer_id: string;
+  service_id: string;
   start_at: string;
   status: string;
   total_price: number | string;
-  barbers:
-    | {
-        name: string;
-      }
-    | null;
-  presencial_payments:
-    | {
-        amount: number | string;
-        method: string;
-        status: string;
-        paid_at: string | null;
-      }
-    | Array<{
-        amount: number | string;
-        method: string;
-        status: string;
-        paid_at: string | null;
-      }>
-    | null;
 };
 
 type PaymentRow = {
+  appointment_id: string;
   amount: number | string;
   method: string;
   status: string;
   paid_at: string | null;
 };
 
-type UpcomingAppointment = {
+type CustomerRow = {
   id: string;
-  start_at: string;
-  status: string;
-  customers:
-    | {
-        full_name: string;
-      }
-    | null;
-  services:
-    | {
-        name: string;
-      }
-    | null;
-  barbers:
-    | {
-        name: string;
-      }
-    | null;
+  full_name: string;
+  created_at: string;
 };
 
-function singleRelation<T>(
-  value: T | T[] | null | undefined,
-): T | null {
-  if (Array.isArray(value)) {
-    return value[0] ?? null;
-  }
+type NamedRow = {
+  id: string;
+  name: string;
+};
 
-  return value ?? null;
-}
-
-const PAYMENT_LABELS: Record<
-  string,
-  string
-> = {
+const PAYMENT_LABELS: Record<string, string> = {
   pix: "Pix",
-  cartao_credito:
-    "Cartão de crédito",
-  cartao_debito:
-    "Cartão de débito",
+  cartao_credito: "Cartão de crédito",
+  cartao_debito: "Cartão de débito",
   dinheiro: "Dinheiro",
   outro: "Outro",
 };
@@ -95,38 +54,28 @@ function localDateKey(
   value: string | Date,
   timeZone: string,
 ) {
-  const parts =
-    new Intl.DateTimeFormat(
-      "en-CA",
-      {
-        timeZone,
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      },
-    ).formatToParts(
-      typeof value === "string"
-        ? new Date(value)
-        : value,
-    );
+  const date =
+    typeof value === "string"
+      ? new Date(value)
+      : value;
+
+  if (!Number.isFinite(date.getTime())) {
+    return "";
+  }
+
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
 
   const year =
-    parts.find(
-      (part) =>
-        part.type === "year",
-    )?.value ?? "";
-
+    parts.find((part) => part.type === "year")?.value ?? "";
   const month =
-    parts.find(
-      (part) =>
-        part.type === "month",
-    )?.value ?? "";
-
+    parts.find((part) => part.type === "month")?.value ?? "";
   const day =
-    parts.find(
-      (part) =>
-        part.type === "day",
-    )?.value ?? "";
+    parts.find((part) => part.type === "day")?.value ?? "";
 
   return `${year}-${month}-${day}`;
 }
@@ -135,54 +84,41 @@ function localHour(
   value: string,
   timeZone: string,
 ) {
-  const parts =
-    new Intl.DateTimeFormat(
-      "pt-BR",
-      {
-        timeZone,
-        hour: "2-digit",
-        minute: "2-digit",
-        hourCycle: "h23",
-      },
-    ).formatToParts(
-      new Date(value),
-    );
+  const date = new Date(value);
+
+  if (!Number.isFinite(date.getTime())) {
+    return null;
+  }
+
+  const parts = new Intl.DateTimeFormat("pt-BR", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
 
   const hour = Number(
-    parts.find(
-      (part) =>
-        part.type === "hour",
-    )?.value ?? 0,
+    parts.find((part) => part.type === "hour")?.value ?? NaN,
   );
 
-  return hour;
+  return Number.isFinite(hour) ? hour : null;
 }
 
-function shortDayLabel(
-  dateKey: string,
-) {
-  const [
-    year,
-    month,
-    day,
-  ] = dateKey
+function shortDayLabel(dateKey: string) {
+  const [year, month, day] = dateKey
     .split("-")
     .map(Number);
 
-  return new Intl.DateTimeFormat(
-    "pt-BR",
-    {
-      day: "2-digit",
-      month: "2-digit",
-    },
-  ).format(
-    new Date(
-      Date.UTC(
-        year,
-        month - 1,
-        day,
-      ),
-    ),
+  if (![year, month, day].every(Number.isFinite)) {
+    return dateKey;
+  }
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "UTC",
+  }).format(
+    new Date(Date.UTC(year, month - 1, day)),
   );
 }
 
@@ -190,15 +126,36 @@ function formatTime(
   value: string,
   timeZone: string,
 ) {
-  return new Intl.DateTimeFormat(
-    "pt-BR",
-    {
-      timeZone,
-      hour: "2-digit",
-      minute: "2-digit",
-      hourCycle: "h23",
-    },
-  ).format(new Date(value));
+  const date = new Date(value);
+
+  if (!Number.isFinite(date.getTime())) {
+    return "—";
+  }
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(date);
+}
+
+function logQueryError(
+  name: string,
+  error:
+    | {
+        code?: string | null;
+        message?: string | null;
+      }
+    | null,
+) {
+  if (!error) return;
+
+  console.error(
+    `[admin-dashboard:${name}]`,
+    error.code ?? "UNKNOWN",
+    error.message ?? "Falha na consulta.",
+  );
 }
 
 export default async function AdminDashboardPage({
@@ -211,543 +168,390 @@ export default async function AdminDashboardPage({
   const { slug } = await params;
 
   const { barbershop } =
-    await requireBarbershopManager(
-      slug,
-    );
+    await requireBarbershopManager(slug);
 
-  const supabase =
-    await createClient();
+  const supabase = await createClient();
 
-  const {
-    data: bounds,
-    error: boundsError,
-  } = await supabase
-    .rpc(
-      "barbershop_day_bounds",
-      {
-        tenant:
-          barbershop.id,
-      },
-    )
-    .single();
+  const now = new Date();
 
-  if (
-    boundsError ||
-    !bounds
-  ) {
-    throw new Error(
-      "Não foi possível consultar a data da barbearia.",
-    );
-  }
+  const rangeStart = new Date(now);
+  rangeStart.setUTCDate(rangeStart.getUTCDate() - 36);
 
-  const {
-    start_at: todayStart,
-    end_at: todayEnd,
-  } = bounds as {
-    start_at: string;
-    end_at: string;
-  };
+  const rangeEnd = new Date(now);
+  rangeEnd.setUTCDate(rangeEnd.getUTCDate() + 1);
 
-  const periodStart =
-    new Date(todayStart);
-
-  // Busco uma janela um pouco maior para o resumo mensal não perder
-  // o primeiro dia em meses com 31 dias. O gráfico continua exibindo 30 dias.
-  periodStart.setUTCDate(
-    periodStart.getUTCDate() -
-      35,
-  );
-
+  /*
+   * Consultas deliberadamente sem embeds do PostgREST.
+   *
+   * O schema multi-tenant possui FKs simples + FKs compostas para garantir
+   * isolamento. Evitar relacionamentos aninhados aqui elimina ambiguidade
+   * entre essas FKs e permite que o dashboard degrade parcialmente em vez
+   * de derrubar toda a administração.
+   */
   const [
     appointmentsResult,
     paymentsResult,
     customersResult,
+    barbersResult,
+    servicesResult,
     upcomingResult,
   ] = await Promise.all([
     supabase
       .from("appointments")
       .select(
-        `
-          id,
-          barber_id,
-          start_at,
-          status,
-          total_price,
-          barbers(name),
-          presencial_payments(
-            amount,
-            method,
-            status,
-            paid_at
-          )
-        `,
+        "id,barber_id,customer_id,service_id,start_at,status,total_price",
       )
-      .eq(
-        "barbershop_id",
-        barbershop.id,
-      )
-      .gte(
-        "start_at",
-        periodStart.toISOString(),
-      )
-      .lt(
-        "start_at",
-        todayEnd,
-      )
+      .eq("barbershop_id", barbershop.id)
+      .gte("start_at", rangeStart.toISOString())
+      .lt("start_at", rangeEnd.toISOString())
       .order("start_at"),
 
     supabase
-      .from(
-        "presencial_payments",
-      )
-      .select(
-        "amount,method,status,paid_at",
-      )
-      .eq(
-        "barbershop_id",
-        barbershop.id,
-      )
+      .from("presencial_payments")
+      .select("appointment_id,amount,method,status,paid_at")
+      .eq("barbershop_id", barbershop.id)
       .eq("status", "paid")
-      .gte(
-        "paid_at",
-        periodStart.toISOString(),
-      )
-      .lt(
-        "paid_at",
-        todayEnd,
-      )
+      .gte("paid_at", rangeStart.toISOString())
+      .lt("paid_at", rangeEnd.toISOString())
       .order("paid_at"),
 
     supabase
       .from("customers")
-      .select(
-        "id,created_at",
-      )
-      .eq(
-        "barbershop_id",
-        barbershop.id,
-      )
-      .gte(
-        "created_at",
-        periodStart.toISOString(),
-      )
-      .lt(
-        "created_at",
-        todayEnd,
-      ),
+      .select("id,full_name,created_at")
+      .eq("barbershop_id", barbershop.id)
+      .gte("created_at", rangeStart.toISOString())
+      .lt("created_at", rangeEnd.toISOString()),
+
+    supabase
+      .from("barbers")
+      .select("id,name")
+      .eq("barbershop_id", barbershop.id),
+
+    supabase
+      .from("services")
+      .select("id,name")
+      .eq("barbershop_id", barbershop.id),
 
     supabase
       .from("appointments")
       .select(
-        `
-          id,
-          start_at,
-          status,
-          customers(full_name),
-          services(name),
-          barbers(name)
-        `,
+        "id,barber_id,customer_id,service_id,start_at,status,total_price",
       )
-      .eq(
-        "barbershop_id",
-        barbershop.id,
-      )
-      .in(
-        "status",
-        [
-          "pending",
-          "confirmed",
-        ],
-      )
-      .gte(
-        "start_at",
-        todayStart,
-      )
+      .eq("barbershop_id", barbershop.id)
+      .in("status", ["pending", "confirmed"])
+      .gte("start_at", now.toISOString())
       .order("start_at")
       .limit(6),
   ]);
 
+  logQueryError("appointments", appointmentsResult.error);
+  logQueryError("payments", paymentsResult.error);
+  logQueryError("customers", customersResult.error);
+  logQueryError("barbers", barbersResult.error);
+  logQueryError("services", servicesResult.error);
+  logQueryError("upcoming", upcomingResult.error);
+
   const appointments =
-    (appointmentsResult.data ??
-      []) as unknown as DashboardAppointment[];
+    (appointmentsResult.data ?? []) as AppointmentRow[];
 
   const payments =
-    (paymentsResult.data ??
-      []) as PaymentRow[];
+    (paymentsResult.data ?? []) as PaymentRow[];
 
   const customers =
-    customersResult.data ??
-    [];
+    (customersResult.data ?? []) as CustomerRow[];
+
+  const barbers =
+    (barbersResult.data ?? []) as NamedRow[];
+
+  const services =
+    (servicesResult.data ?? []) as NamedRow[];
 
   const upcoming =
-    (upcomingResult.data ??
-      []) as unknown as UpcomingAppointment[];
+    (upcomingResult.data ?? []) as AppointmentRow[];
 
-  const todayKey =
-    localDateKey(
-      todayStart,
+  const upcomingCustomerIds = Array.from(
+    new Set(
+      upcoming
+        .map((item) => item.customer_id)
+        .filter(Boolean),
+    ),
+  );
+
+  const { data: upcomingCustomersData, error: upcomingCustomersError } =
+    upcomingCustomerIds.length
+      ? await supabase
+          .from("customers")
+          .select("id,full_name")
+          .eq("barbershop_id", barbershop.id)
+          .in("id", upcomingCustomerIds)
+      : {
+          data: [] as Array<{
+            id: string;
+            full_name: string;
+          }>,
+          error: null,
+        };
+
+  logQueryError(
+    "upcoming-customers",
+    upcomingCustomersError,
+  );
+
+  const barberNameById = new Map(
+    barbers.map((item) => [item.id, item.name]),
+  );
+
+  const serviceNameById = new Map(
+    services.map((item) => [item.id, item.name]),
+  );
+
+  const customerNameById = new Map(
+    (upcomingCustomersData ?? []).map((item) => [
+      item.id,
+      item.full_name,
+    ]),
+  );
+
+  const paymentByAppointmentId = new Map(
+    payments.map((payment) => [
+      payment.appointment_id,
+      payment,
+    ]),
+  );
+
+  const todayKey = localDateKey(
+    now,
+    barbershop.timezone,
+  );
+
+  const monthKey = todayKey.slice(0, 7);
+
+  const dailyKeys: string[] = [];
+
+  for (let offset = 29; offset >= 0; offset -= 1) {
+    const day = new Date(now);
+    day.setUTCDate(day.getUTCDate() - offset);
+
+    const key = localDateKey(
+      day,
       barbershop.timezone,
     );
 
-  const monthKey =
-    todayKey.slice(0, 7);
-
-  const dailyKeys: string[] =
-    [];
-
-  for (
-    let offset = 29;
-    offset >= 0;
-    offset -= 1
-  ) {
-    const day =
-      new Date(todayStart);
-
-    day.setUTCDate(
-      day.getUTCDate() -
-        offset,
-    );
-
-    dailyKeys.push(
-      localDateKey(
-        day,
-        barbershop.timezone,
-      ),
-    );
+    if (key) {
+      dailyKeys.push(key);
+    }
   }
 
-  const dailyRevenueMap =
-    new Map<
-      string,
-      number
-    >(
-      dailyKeys.map(
-        (key) => [key, 0],
-      ),
-    );
+  const dailyRevenueMap = new Map<string, number>(
+    dailyKeys.map((key) => [key, 0]),
+  );
 
   for (const payment of payments) {
-    if (!payment.paid_at) {
+    if (!payment.paid_at) continue;
+
+    const key = localDateKey(
+      payment.paid_at,
+      barbershop.timezone,
+    );
+
+    if (!key || !dailyRevenueMap.has(key)) {
       continue;
     }
 
-    const key =
-      localDateKey(
+    dailyRevenueMap.set(
+      key,
+      (dailyRevenueMap.get(key) ?? 0) +
+        Number(payment.amount),
+    );
+  }
+
+  const revenueChart = dailyKeys.map((key) => ({
+    label: shortDayLabel(key),
+    value: dailyRevenueMap.get(key) ?? 0,
+  }));
+
+  const lastSeven = new Set(dailyKeys.slice(-7));
+
+  const revenueToday = payments.reduce(
+    (sum, payment) => {
+      if (
+        !payment.paid_at ||
+        localDateKey(
+          payment.paid_at,
+          barbershop.timezone,
+        ) !== todayKey
+      ) {
+        return sum;
+      }
+
+      return sum + Number(payment.amount);
+    },
+    0,
+  );
+
+  const revenueWeek = payments.reduce(
+    (sum, payment) => {
+      if (!payment.paid_at) return sum;
+
+      const key = localDateKey(
         payment.paid_at,
         barbershop.timezone,
       );
 
-    dailyRevenueMap.set(
-      key,
-      (dailyRevenueMap.get(
-        key,
-      ) ?? 0) +
-        Number(
-          payment.amount,
-        ),
-    );
-  }
+      return lastSeven.has(key)
+        ? sum + Number(payment.amount)
+        : sum;
+    },
+    0,
+  );
 
-  const revenueChart =
-    dailyKeys.map(
-      (key) => ({
-        label:
-          shortDayLabel(key),
-        value:
-          dailyRevenueMap.get(
-            key,
-          ) ?? 0,
-      }),
-    );
+  const monthPayments = payments.filter(
+    (payment) =>
+      payment.paid_at &&
+      localDateKey(
+        payment.paid_at,
+        barbershop.timezone,
+      ).startsWith(monthKey),
+  );
 
-  const lastSeven =
-    new Set(
-      dailyKeys.slice(-7),
-    );
-
-  const revenueToday =
-    payments.reduce(
-      (sum, payment) => {
-        if (
-          !payment.paid_at ||
-          localDateKey(
-            payment.paid_at,
-            barbershop.timezone,
-          ) !== todayKey
-        ) {
-          return sum;
-        }
-
-        return (
-          sum +
-          Number(
-            payment.amount,
-          )
-        );
-      },
-      0,
-    );
-
-  const revenueWeek =
-    payments.reduce(
-      (sum, payment) => {
-        if (!payment.paid_at) {
-          return sum;
-        }
-
-        const key =
-          localDateKey(
-            payment.paid_at,
-            barbershop.timezone,
-          );
-
-        return lastSeven.has(
-          key,
-        )
-          ? sum +
-              Number(
-                payment.amount,
-              )
-          : sum;
-      },
-      0,
-    );
-
-  const monthPayments =
-    payments.filter(
-      (payment) =>
-        payment.paid_at &&
-        localDateKey(
-          payment.paid_at,
-          barbershop.timezone,
-        ).startsWith(
-          monthKey,
-        ),
-    );
-
-  const revenueMonth =
-    monthPayments.reduce(
-      (sum, payment) =>
-        sum +
-        Number(payment.amount),
-      0,
-    );
+  const revenueMonth = monthPayments.reduce(
+    (sum, payment) =>
+      sum + Number(payment.amount),
+    0,
+  );
 
   const ticketAverage =
-    monthPayments.length
-      ? revenueMonth /
-        monthPayments.length
+    monthPayments.length > 0
+      ? revenueMonth / monthPayments.length
       : 0;
 
-  const completedToday =
-    appointments.filter(
-      (appointment) =>
-        appointment.status ===
-          "completed" &&
-        localDateKey(
-          appointment.start_at,
-          barbershop.timezone,
-        ) === todayKey,
-    ).length;
+  const completedToday = appointments.filter(
+    (appointment) =>
+      appointment.status === "completed" &&
+      localDateKey(
+        appointment.start_at,
+        barbershop.timezone,
+      ) === todayKey,
+  ).length;
 
-  const newCustomersMonth =
-    customers.filter(
-      (customer) =>
-        localDateKey(
-          customer.created_at,
-          barbershop.timezone,
-        ).startsWith(
-          monthKey,
-        ),
-    ).length;
+  const newCustomersMonth = customers.filter(
+    (customer) =>
+      localDateKey(
+        customer.created_at,
+        barbershop.timezone,
+      ).startsWith(monthKey),
+  ).length;
 
-  const barberMap =
-    new Map<
-      string,
-      {
-        name: string;
-        appointments: number;
-        revenue: number;
-      }
-    >();
+  const barberMap = new Map<
+    string,
+    {
+      name: string;
+      appointments: number;
+      revenue: number;
+    }
+  >();
 
-  for (
-    const appointment
-    of appointments
-  ) {
-    if (
-      appointment.status !==
-      "completed"
-    ) {
+  for (const appointment of appointments) {
+    if (appointment.status !== "completed") {
       continue;
     }
 
-    const name =
-      appointment.barbers
-        ?.name ??
-      "Profissional";
-
     const current =
-      barberMap.get(
-        appointment.barber_id,
-      ) ?? {
-        name,
+      barberMap.get(appointment.barber_id) ?? {
+        name:
+          barberNameById.get(appointment.barber_id) ??
+          "Profissional",
         appointments: 0,
         revenue: 0,
       };
 
-    current.appointments +=
-      1;
+    current.appointments += 1;
 
     const payment =
-      singleRelation(
-        appointment.presencial_payments,
-      );
+      paymentByAppointmentId.get(appointment.id);
 
-    if (
-      payment &&
-      payment.status ===
-        "paid"
-    ) {
-      current.revenue +=
-        Number(
-          payment.amount,
-        );
+    if (payment?.status === "paid") {
+      current.revenue += Number(payment.amount);
     }
 
-    barberMap.set(
-      appointment.barber_id,
-      current,
-    );
+    barberMap.set(appointment.barber_id, current);
   }
 
-  const barberPerformance =
-    Array.from(
-      barberMap.values(),
+  const barberPerformance = Array.from(
+    barberMap.values(),
+  )
+    .sort(
+      (a, b) =>
+        b.appointments - a.appointments,
     )
-      .sort(
-        (a, b) =>
-          b.appointments -
-          a.appointments,
-      )
-      .slice(0, 6);
+    .slice(0, 6);
 
-  const paymentMap =
-    new Map<
-      string,
-      {
-        count: number;
-        amount: number;
-      }
-    >();
+  const paymentMap = new Map<
+    string,
+    {
+      count: number;
+      amount: number;
+    }
+  >();
 
   for (const payment of payments) {
     const current =
-      paymentMap.get(
-        payment.method,
-      ) ?? {
+      paymentMap.get(payment.method) ?? {
         count: 0,
         amount: 0,
       };
 
     current.count += 1;
-    current.amount +=
-      Number(
-        payment.amount,
-      );
+    current.amount += Number(payment.amount);
 
-    paymentMap.set(
-      payment.method,
-      current,
-    );
+    paymentMap.set(payment.method, current);
   }
 
-  const paymentMethods =
-    Array.from(
-      paymentMap.entries(),
-    )
-      .map(
-        ([
-          key,
-          value,
-        ]) => ({
-          key,
-          label:
-            PAYMENT_LABELS[
-              key
-            ] ?? key,
-          count:
-            value.count,
-          amount:
-            value.amount,
-        }),
-      )
-      .sort(
-        (a, b) =>
-          b.count - a.count,
-      );
+  const paymentMethods = Array.from(
+    paymentMap.entries(),
+  )
+    .map(([key, value]) => ({
+      key,
+      label: PAYMENT_LABELS[key] ?? key,
+      count: value.count,
+      amount: value.amount,
+    }))
+    .sort((a, b) => b.count - a.count);
 
-  const peakMap =
-    new Map<
-      number,
-      number
-    >();
+  const peakMap = new Map<number, number>();
 
-  for (
-    const appointment
-    of appointments
-  ) {
-    if (
-      appointment.status ===
-      "canceled"
-    ) {
+  for (const appointment of appointments) {
+    if (appointment.status === "canceled") {
       continue;
     }
 
-    const hour =
-      localHour(
-        appointment.start_at,
-        barbershop.timezone,
-      );
+    const hour = localHour(
+      appointment.start_at,
+      barbershop.timezone,
+    );
+
+    if (hour === null) {
+      continue;
+    }
 
     peakMap.set(
       hour,
-      (peakMap.get(
-        hour,
-      ) ?? 0) + 1,
+      (peakMap.get(hour) ?? 0) + 1,
     );
   }
 
-  const peakHours =
-    Array.from(
-      {
-        length: 13,
-      },
-      (_, index) =>
-        index + 8,
-    ).map(
-      (hour) => ({
-        label: `${String(
-          hour,
-        ).padStart(
-          2,
-          "0",
-        )}h`,
-        value:
-          peakMap.get(
-            hour,
-          ) ?? 0,
-      }),
-    );
+  const peakHours = Array.from(
+    { length: 13 },
+    (_, index) => index + 8,
+  ).map((hour) => ({
+    label: `${String(hour).padStart(2, "0")}h`,
+    value: peakMap.get(hour) ?? 0,
+  }));
 
   const metrics = [
     {
-      label:
-        "Faturamento hoje",
-      value:
-        formatarMoeda(
-          revenueToday,
-        ),
+      label: "Faturamento hoje",
+      value: formatarMoeda(revenueToday),
       detail: `${formatarMoeda(
         revenueWeek,
       )} nos últimos 7 dias`,
@@ -755,39 +559,36 @@ export default async function AdminDashboardPage({
       href: `/admin/${barbershop.slug}/faturamento`,
     },
     {
-      label:
-        "Atendimentos concluídos",
-      value:
-        completedToday,
-      detail:
-        "concluídos hoje",
+      label: "Atendimentos concluídos",
+      value: completedToday,
+      detail: "concluídos hoje",
       icon: Scissors,
       href: `/admin/${barbershop.slug}/reservas`,
     },
     {
-      label:
-        "Ticket médio",
-      value:
-        formatarMoeda(
-          ticketAverage,
-        ),
-      detail:
-        "média do mês",
-      icon:
-        CircleDollarSign,
+      label: "Ticket médio",
+      value: formatarMoeda(ticketAverage),
+      detail: "média do mês",
+      icon: CircleDollarSign,
       href: `/admin/${barbershop.slug}/pagamentos`,
     },
     {
-      label:
-        "Novos clientes",
-      value:
-        newCustomersMonth,
-      detail:
-        "neste mês",
+      label: "Novos clientes",
+      value: newCustomersMonth,
+      detail: "neste mês",
       icon: UserPlus,
       href: `/admin/${barbershop.slug}/reservas`,
     },
   ] as const;
+
+  const partialData =
+    Boolean(appointmentsResult.error) ||
+    Boolean(paymentsResult.error) ||
+    Boolean(customersResult.error) ||
+    Boolean(barbersResult.error) ||
+    Boolean(servicesResult.error) ||
+    Boolean(upcomingResult.error) ||
+    Boolean(upcomingCustomersError);
 
   return (
     <div className="grid gap-6">
@@ -802,34 +603,35 @@ export default async function AdminDashboardPage({
           </h1>
 
           <p className="mt-2 text-sm text-slate-400">
-            Indicadores da{" "}
-            {barbershop.name}
+            Indicadores da {barbershop.name}
           </p>
         </div>
 
         <div className="flex flex-wrap gap-2 text-xs">
           <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 font-semibold text-slate-300">
-            Hoje:{" "}
-            {formatarMoeda(
-              revenueToday,
-            )}
+            Hoje: {formatarMoeda(revenueToday)}
           </span>
 
           <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 font-semibold text-slate-300">
-            7 dias:{" "}
-            {formatarMoeda(
-              revenueWeek,
-            )}
+            7 dias: {formatarMoeda(revenueWeek)}
           </span>
 
           <span className="rounded-full border border-amber-300/20 bg-amber-300/[0.08] px-3 py-2 font-semibold text-amber-200">
-            Mês:{" "}
-            {formatarMoeda(
-              revenueMonth,
-            )}
+            Mês: {formatarMoeda(revenueMonth)}
           </span>
         </div>
       </header>
+
+      {partialData && (
+        <div
+          role="status"
+          className="rounded-2xl border border-amber-300/20 bg-amber-300/[0.06] px-4 py-3 text-sm leading-6 text-amber-100/80"
+        >
+          Alguns indicadores não puderam ser carregados agora. O painel
+          administrativo continua disponível e as demais informações foram
+          mantidas.
+        </div>
+      )}
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {metrics.map(
@@ -844,7 +646,9 @@ export default async function AdminDashboardPage({
               key={label}
               href={href}
               className="group rounded-[1.4rem] border border-white/10 bg-[#1B2939] p-5 shadow-[0_16px_45px_rgba(0,0,0,0.16)] transition hover:-translate-y-1 hover:border-amber-300/25 hover:shadow-[0_22px_60px_rgba(0,0,0,0.24)] focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
-              aria-label={`${label}: ${String(value)}. Abrir detalhes.`}
+              aria-label={`${label}: ${String(
+                value,
+              )}. Abrir detalhes.`}
             >
               <div className="flex items-start justify-between gap-4">
                 <div>
@@ -876,12 +680,8 @@ export default async function AdminDashboardPage({
 
       <DashboardCharts
         revenue={revenueChart}
-        barbers={
-          barberPerformance
-        }
-        payments={
-          paymentMethods
-        }
+        barbers={barberPerformance}
+        payments={paymentMethods}
         peakHours={peakHours}
       />
 
@@ -901,40 +701,35 @@ export default async function AdminDashboardPage({
         </div>
 
         <div className="mt-5 grid gap-2">
-          {upcoming.map(
-            (item) => (
-              <div
-                key={item.id}
-                className="flex flex-col justify-between gap-2 rounded-2xl border border-white/[0.08] bg-white/[0.035] px-4 py-3 sm:flex-row sm:items-center"
-              >
-                <div>
-                  <p className="font-bold text-white">
-                    {item.customers
-                      ?.full_name ??
-                      "Cliente"}
-                  </p>
+          {upcoming.map((item) => (
+            <div
+              key={item.id}
+              className="flex flex-col justify-between gap-2 rounded-2xl border border-white/[0.08] bg-white/[0.035] px-4 py-3 sm:flex-row sm:items-center"
+            >
+              <div>
+                <p className="font-bold text-white">
+                  {customerNameById.get(item.customer_id) ??
+                    "Cliente"}
+                </p>
 
-                  <p className="mt-1 text-xs text-slate-400">
-                    {item.services
-                      ?.name ??
-                      "Serviço"}{" "}
-                    •{" "}
-                    {item.barbers
-                      ?.name ??
-                      "Profissional"}
-                  </p>
-                </div>
-
-                <span className="inline-flex items-center gap-2 text-sm font-extrabold text-amber-200">
-                  <Clock3 className="h-4 w-4" />
-                  {formatTime(
-                    item.start_at,
-                    barbershop.timezone,
-                  )}
-                </span>
+                <p className="mt-1 text-xs text-slate-400">
+                  {serviceNameById.get(item.service_id) ??
+                    "Serviço"}{" "}
+                  •{" "}
+                  {barberNameById.get(item.barber_id) ??
+                    "Profissional"}
+                </p>
               </div>
-            ),
-          )}
+
+              <span className="inline-flex items-center gap-2 text-sm font-extrabold text-amber-200">
+                <Clock3 className="h-4 w-4" />
+                {formatTime(
+                  item.start_at,
+                  barbershop.timezone,
+                )}
+              </span>
+            </div>
+          ))}
 
           {!upcoming.length && (
             <div className="rounded-2xl border border-dashed border-white/10 p-6 text-center text-sm text-slate-500">

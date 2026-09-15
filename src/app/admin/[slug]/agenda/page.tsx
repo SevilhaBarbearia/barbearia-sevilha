@@ -14,6 +14,36 @@ import {
 import { requireBarbershopManager } from "@/features/tenancy/server";
 import { createClient } from "@/lib/supabase/server";
 
+type AppointmentBaseRow = {
+  id: string;
+  barber_id: string;
+  customer_id: string;
+  service_id: string;
+  start_at: string;
+  end_at: string;
+  status: string;
+  total_price: number | string;
+  public_reference: string | null;
+};
+
+type CustomerRow = {
+  id: string;
+  full_name: string;
+  phone: string | null;
+};
+
+type ServiceRow = {
+  id: string;
+  name: string;
+};
+
+type PaymentRow = {
+  appointment_id: string;
+  status: string;
+  method: string;
+  amount: number | string;
+};
+
 type AgendaAppointment = {
   id: string;
   barber_id: string;
@@ -39,11 +69,6 @@ type AgendaAppointment = {
         method: string;
         amount: number | string;
       }
-    | Array<{
-        status: string;
-        method: string;
-        amount: number | string;
-      }>
     | null;
 };
 
@@ -60,89 +85,60 @@ type BarberRow = {
   name: string;
 };
 
-function singleRelation<T>(
-  value: T | T[] | null | undefined,
-): T | null {
-  if (Array.isArray(value)) {
-    return value[0] ?? null;
-  }
-
-  return value ?? null;
-}
-
 function clockToMinutes(
   value: string | null,
 ) {
   if (!value) return null;
 
-  const [
-    hour,
-    minute,
-  ] = value
+  const [hour, minute] = value
     .slice(0, 5)
     .split(":")
     .map(Number);
 
-  return (
-    hour * 60 + minute
-  );
+  return hour * 60 + minute;
 }
 
 function localMinutes(
   value: string,
   timeZone: string,
 ) {
-  const parts =
-    new Intl.DateTimeFormat(
-      "pt-BR",
-      {
-        timeZone,
-        hour: "2-digit",
-        minute: "2-digit",
-        hourCycle: "h23",
-      },
-    ).formatToParts(
-      new Date(value),
-    );
+  const date = new Date(value);
+
+  if (!Number.isFinite(date.getTime())) {
+    return 0;
+  }
+
+  const parts = new Intl.DateTimeFormat("pt-BR", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
 
   const hour = Number(
-    parts.find(
-      (part) =>
-        part.type === "hour",
-    )?.value ?? 0,
+    parts.find((part) => part.type === "hour")?.value ?? 0,
   );
 
   const minute = Number(
-    parts.find(
-      (part) =>
-        part.type === "minute",
-    )?.value ?? 0,
+    parts.find((part) => part.type === "minute")?.value ?? 0,
   );
 
-  return (
-    hour * 60 + minute
-  );
+  return hour * 60 + minute;
 }
 
 function minutesToClock(
   minutes: number,
 ) {
-  const hour =
-    Math.floor(
-      minutes / 60,
-    );
+  const hour = Math.floor(
+    minutes / 60,
+  );
 
-  const minute =
-    minutes % 60;
+  const minute = minutes % 60;
 
-  return `${String(
-    hour,
-  ).padStart(
+  return `${String(hour).padStart(
     2,
     "0",
-  )}:${String(
-    minute,
-  ).padStart(
+  )}:${String(minute).padStart(
     2,
     "0",
   )}`;
@@ -152,17 +148,19 @@ function longDate(
   value: string,
   timeZone: string,
 ) {
-  const text =
-    new Intl.DateTimeFormat(
-      "pt-BR",
-      {
-        timeZone,
-        weekday: "long",
-        day: "2-digit",
-        month: "long",
-        year: "numeric",
-      },
-    ).format(new Date(value));
+  const date = new Date(value);
+
+  if (!Number.isFinite(date.getTime())) {
+    return "Hoje";
+  }
+
+  const text = new Intl.DateTimeFormat("pt-BR", {
+    timeZone,
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  }).format(date);
 
   return (
     text.charAt(0).toUpperCase() +
@@ -180,94 +178,75 @@ function buildColumnSegments(
     appointments
       .filter(
         (appointment) =>
-          appointment.barber_id ===
-            barberId &&
-          appointment.status !==
-            "canceled",
+          appointment.barber_id === barberId &&
+          appointment.status !== "canceled",
       )
       .sort(
         (a, b) =>
-          new Date(
-            a.start_at,
-          ).getTime() -
-          new Date(
-            b.start_at,
-          ).getTime(),
+          new Date(a.start_at).getTime() -
+          new Date(b.start_at).getTime(),
       );
 
   if (!businessHour) {
     return barberAppointments.map(
       (appointment) => ({
-        kind:
-          "appointment" as const,
+        kind: "appointment" as const,
         appointment: {
           id: appointment.id,
-          status:
-            appointment.status,
-          startLabel:
-            minutesToClock(
-              localMinutes(
-                appointment.start_at,
-                timeZone,
-              ),
+          status: appointment.status,
+          startLabel: minutesToClock(
+            localMinutes(
+              appointment.start_at,
+              timeZone,
             ),
-          endLabel:
-            minutesToClock(
-              localMinutes(
-                appointment.end_at,
-                timeZone,
-              ),
+          ),
+          endLabel: minutesToClock(
+            localMinutes(
+              appointment.end_at,
+              timeZone,
             ),
+          ),
           customerName:
-            appointment.customers
-              ?.full_name ??
+            appointment.customers?.full_name ??
             "Cliente",
           phone:
-            appointment.customers
-              ?.phone ?? null,
+            appointment.customers?.phone ??
+            null,
           serviceName:
-            appointment.services
-              ?.name ??
+            appointment.services?.name ??
             "Serviço",
-          totalPrice:
-            Number(
-              appointment.total_price,
-            ),
+          totalPrice: Number(
+            appointment.total_price,
+          ),
           publicReference:
             appointment.public_reference,
-          payment: (() => {
-            const payment =
-              singleRelation(
-                appointment.presencial_payments,
-              );
-
-            return payment
+          payment:
+            appointment.presencial_payments
               ? {
                   status:
-                    payment.status,
+                    appointment.presencial_payments
+                      .status,
                   method:
-                    payment.method,
-                  amount:
-                    Number(
-                      payment.amount,
-                    ),
+                    appointment.presencial_payments
+                      .method,
+                  amount: Number(
+                    appointment.presencial_payments
+                      .amount,
+                  ),
                 }
-              : null;
-          })(),
+              : null,
         },
       }),
     );
   }
 
-  const start =
-    clockToMinutes(
-      businessHour.start_time,
-    );
+  const start = clockToMinutes(
+    businessHour.start_time,
+  );
 
-  const end =
-    clockToMinutes(
-      businessHour.end_time,
-    );
+  const end = clockToMinutes(
+    businessHour.end_time,
+  );
 
   if (
     start === null ||
@@ -293,31 +272,26 @@ function buildColumnSegments(
   const intervals: Interval[] =
     barberAppointments.map(
       (appointment) => ({
-        kind:
-          "appointment" as const,
-        start:
-          localMinutes(
-            appointment.start_at,
-            timeZone,
-          ),
-        end:
-          localMinutes(
-            appointment.end_at,
-            timeZone,
-          ),
+        kind: "appointment" as const,
+        start: localMinutes(
+          appointment.start_at,
+          timeZone,
+        ),
+        end: localMinutes(
+          appointment.end_at,
+          timeZone,
+        ),
         appointment,
       }),
     );
 
-  const breakStart =
-    clockToMinutes(
-      businessHour.break_start,
-    );
+  const breakStart = clockToMinutes(
+    businessHour.break_start,
+  );
 
-  const breakEnd =
-    clockToMinutes(
-      businessHour.break_end,
-    );
+  const breakEnd = clockToMinutes(
+    businessHour.break_end,
+  );
 
   if (
     breakStart !== null &&
@@ -336,44 +310,29 @@ function buildColumnSegments(
       a.start - b.start,
   );
 
-  const segments: AgendaSegment[] =
-    [];
-
+  const segments: AgendaSegment[] = [];
   let cursor = start;
 
-  for (
-    const interval
-    of intervals
-  ) {
-    const intervalStart =
-      Math.max(
-        start,
-        interval.start,
-      );
+  for (const interval of intervals) {
+    const intervalStart = Math.max(
+      start,
+      interval.start,
+    );
 
-    const intervalEnd =
-      Math.min(
-        end,
-        interval.end,
-      );
+    const intervalEnd = Math.min(
+      end,
+      interval.end,
+    );
 
-    if (
-      intervalEnd <=
-      intervalStart
-    ) {
+    if (intervalEnd <= intervalStart) {
       continue;
     }
 
-    if (
-      intervalStart >
-      cursor
-    ) {
+    if (intervalStart > cursor) {
       segments.push({
         kind: "free",
         startLabel:
-          minutesToClock(
-            cursor,
-          ),
+          minutesToClock(cursor),
         endLabel:
           minutesToClock(
             intervalStart,
@@ -381,10 +340,7 @@ function buildColumnSegments(
       });
     }
 
-    if (
-      interval.kind ===
-      "break"
-    ) {
+    if (interval.kind === "break") {
       segments.push({
         kind: "break",
         startLabel:
@@ -401,12 +357,10 @@ function buildColumnSegments(
         interval.appointment;
 
       segments.push({
-        kind:
-          "appointment",
+        kind: "appointment",
         appointment: {
           id: appointment.id,
-          status:
-            appointment.status,
+          status: appointment.status,
           startLabel:
             minutesToClock(
               interval.start,
@@ -416,41 +370,34 @@ function buildColumnSegments(
               interval.end,
             ),
           customerName:
-            appointment.customers
-              ?.full_name ??
+            appointment.customers?.full_name ??
             "Cliente",
           phone:
-            appointment.customers
-              ?.phone ?? null,
+            appointment.customers?.phone ??
+            null,
           serviceName:
-            appointment.services
-              ?.name ??
+            appointment.services?.name ??
             "Serviço",
-          totalPrice:
-            Number(
-              appointment.total_price,
-            ),
+          totalPrice: Number(
+            appointment.total_price,
+          ),
           publicReference:
             appointment.public_reference,
-          payment: (() => {
-            const payment =
-              singleRelation(
-                appointment.presencial_payments,
-              );
-
-            return payment
+          payment:
+            appointment.presencial_payments
               ? {
                   status:
-                    payment.status,
+                    appointment.presencial_payments
+                      .status,
                   method:
-                    payment.method,
-                  amount:
-                    Number(
-                      payment.amount,
-                    ),
+                    appointment.presencial_payments
+                      .method,
+                  amount: Number(
+                    appointment.presencial_payments
+                      .amount,
+                  ),
                 }
-              : null;
-          })(),
+              : null,
         },
       });
     }
@@ -465,17 +412,31 @@ function buildColumnSegments(
     segments.push({
       kind: "free",
       startLabel:
-        minutesToClock(
-          cursor,
-        ),
+        minutesToClock(cursor),
       endLabel:
-        minutesToClock(
-          end,
-        ),
+        minutesToClock(end),
     });
   }
 
   return segments;
+}
+
+function logQueryError(
+  name: string,
+  error:
+    | {
+        code?: string | null;
+        message?: string | null;
+      }
+    | null,
+) {
+  if (!error) return;
+
+  console.error(
+    `[admin-agenda:${name}]`,
+    error.code ?? "UNKNOWN",
+    error.message ?? "Falha na consulta.",
+  );
 }
 
 export default async function AgendaPage({
@@ -488,32 +449,33 @@ export default async function AgendaPage({
   const { slug } = await params;
 
   const { barbershop } =
-    await requireBarbershopManager(
-      slug,
-    );
+    await requireBarbershopManager(slug);
 
-  const supabase =
-    await createClient();
+  const supabase = await createClient();
 
   const {
     data: bounds,
     error: boundsError,
   } = await supabase
-    .rpc(
-      "barbershop_day_bounds",
-      {
-        tenant:
-          barbershop.id,
-      },
-    )
+    .rpc("barbershop_day_bounds", {
+      tenant: barbershop.id,
+    })
     .single();
 
-  if (
-    boundsError ||
-    !bounds
-  ) {
-    throw new Error(
-      "Não foi possível consultar a data da barbearia.",
+  if (boundsError || !bounds) {
+    logQueryError("day-bounds", boundsError);
+
+    return (
+      <div className="grid gap-5">
+        <h1 className="text-2xl font-black text-white">
+          Agenda do dia
+        </h1>
+
+        <div className="rounded-2xl border border-amber-300/20 bg-amber-300/[0.06] p-5 text-sm leading-6 text-amber-100/80">
+          Não foi possível calcular o período da agenda agora. Tente atualizar a
+          página em instantes.
+        </div>
+      </div>
     );
   }
 
@@ -525,101 +487,164 @@ export default async function AgendaPage({
     end_at: string;
   };
 
-  const weekday =
-    new Date(start)
-      .toLocaleString(
-        "en-US",
-        {
-          timeZone:
-            barbershop.timezone,
-          weekday: "short",
-        },
-      );
+  const weekday = new Date(start).toLocaleString(
+    "en-US",
+    {
+      timeZone:
+        barbershop.timezone,
+      weekday: "short",
+    },
+  );
 
-  const dayOfWeek =
-    [
-      "Sun",
-      "Mon",
-      "Tue",
-      "Wed",
-      "Thu",
-      "Fri",
-      "Sat",
-    ].indexOf(weekday);
+  const dayOfWeek = [
+    "Sun",
+    "Mon",
+    "Tue",
+    "Wed",
+    "Thu",
+    "Fri",
+    "Sat",
+  ].indexOf(weekday);
 
   const [
     appointmentsResult,
     barbersResult,
     hoursResult,
+    customersResult,
+    servicesResult,
+    paymentsResult,
   ] = await Promise.all([
     supabase
       .from("appointments")
       .select(
-        `
-          id,
-          barber_id,
-          start_at,
-          end_at,
-          status,
-          total_price,
-          public_reference,
-          customers(
-            full_name,
-            phone
-          ),
-          services(name),
-          presencial_payments(
-            status,
-            method,
-            amount
-          )
-        `,
+        "id,barber_id,customer_id,service_id,start_at,end_at,status,total_price,public_reference",
       )
-      .eq(
-        "barbershop_id",
-        barbershop.id,
-      )
-      .gte(
-        "start_at",
-        start,
-      )
-      .lt(
-        "start_at",
-        end,
-      )
+      .eq("barbershop_id", barbershop.id)
+      .gte("start_at", start)
+      .lt("start_at", end)
       .order("start_at"),
 
     supabase
       .from("barbers")
       .select("id,name")
-      .eq(
-        "barbershop_id",
-        barbershop.id,
-      )
+      .eq("barbershop_id", barbershop.id)
       .eq("is_active", true)
       .order("name"),
 
     supabase
-      .from(
-        "business_hours",
-      )
+      .from("business_hours")
       .select(
         "barber_id,start_time,end_time,break_start,break_end",
       )
-      .eq(
-        "barbershop_id",
-        barbershop.id,
-      )
-      .eq(
-        "day_of_week",
-        dayOfWeek,
-      )
+      .eq("barbershop_id", barbershop.id)
+      .eq("day_of_week", dayOfWeek)
       .eq("is_active", true),
+
+    supabase
+      .from("customers")
+      .select("id,full_name,phone")
+      .eq("barbershop_id", barbershop.id),
+
+    supabase
+      .from("services")
+      .select("id,name")
+      .eq("barbershop_id", barbershop.id),
+
+    supabase
+      .from("presencial_payments")
+      .select(
+        "appointment_id,status,method,amount",
+      )
+      .eq("barbershop_id", barbershop.id),
   ]);
 
-  const appointments =
+  logQueryError(
+    "appointments",
+    appointmentsResult.error,
+  );
+  logQueryError(
+    "barbers",
+    barbersResult.error,
+  );
+  logQueryError(
+    "hours",
+    hoursResult.error,
+  );
+  logQueryError(
+    "customers",
+    customersResult.error,
+  );
+  logQueryError(
+    "services",
+    servicesResult.error,
+  );
+  logQueryError(
+    "payments",
+    paymentsResult.error,
+  );
+
+  const appointmentRows =
     (appointmentsResult.data ??
-      []) as unknown as AgendaAppointment[];
+      []) as AppointmentBaseRow[];
+
+  const customers =
+    (customersResult.data ??
+      []) as CustomerRow[];
+
+  const services =
+    (servicesResult.data ??
+      []) as ServiceRow[];
+
+  const payments =
+    (paymentsResult.data ??
+      []) as PaymentRow[];
+
+  const customerById = new Map(
+    customers.map((item) => [
+      item.id,
+      item,
+    ]),
+  );
+
+  const serviceById = new Map(
+    services.map((item) => [
+      item.id,
+      item,
+    ]),
+  );
+
+  const paymentByAppointmentId =
+    new Map(
+      payments.map((item) => [
+        item.appointment_id,
+        item,
+      ]),
+    );
+
+  const appointments: AgendaAppointment[] =
+    appointmentRows.map((item) => ({
+      id: item.id,
+      barber_id: item.barber_id,
+      start_at: item.start_at,
+      end_at: item.end_at,
+      status: item.status,
+      total_price:
+        item.total_price,
+      public_reference:
+        item.public_reference,
+      customers:
+        customerById.get(
+          item.customer_id,
+        ) ?? null,
+      services:
+        serviceById.get(
+          item.service_id,
+        ) ?? null,
+      presencial_payments:
+        paymentByAppointmentId.get(
+          item.id,
+        ) ?? null,
+    }));
 
   const barbers =
     (barbersResult.data ??
@@ -630,33 +655,28 @@ export default async function AgendaPage({
       []) as BusinessHourRow[];
 
   const columns: AgendaBarberColumn[] =
-    barbers.map(
-      (barber) => ({
-        id: barber.id,
-        name: barber.name,
-        segments:
-          buildColumnSegments(
-            barber.id,
-            appointments,
-            hours.find(
-              (hour) =>
-                hour.barber_id ===
-                barber.id,
-            ),
-            barbershop.timezone,
+    barbers.map((barber) => ({
+      id: barber.id,
+      name: barber.name,
+      segments:
+        buildColumnSegments(
+          barber.id,
+          appointments,
+          hours.find(
+            (hour) =>
+              hour.barber_id ===
+              barber.id,
           ),
-      }),
-    );
+          barbershop.timezone,
+        ),
+    }));
 
   const active =
-    appointments.filter(
-      (item) =>
-        [
-          "pending",
-          "confirmed",
-        ].includes(
-          item.status,
-        ),
+    appointments.filter((item) =>
+      [
+        "pending",
+        "confirmed",
+      ].includes(item.status),
     ).length;
 
   const completed =
@@ -690,12 +710,19 @@ export default async function AgendaPage({
       icon: XCircle,
     },
     {
-      label:
-        "Profissionais",
+      label: "Profissionais",
       value: barbers.length,
       icon: UsersRound,
     },
   ] as const;
+
+  const partialData =
+    Boolean(appointmentsResult.error) ||
+    Boolean(barbersResult.error) ||
+    Boolean(hoursResult.error) ||
+    Boolean(customersResult.error) ||
+    Boolean(servicesResult.error) ||
+    Boolean(paymentsResult.error);
 
   return (
     <div className="grid gap-6">
@@ -731,6 +758,7 @@ export default async function AgendaPage({
               >
                 <div className="flex items-center gap-2 text-slate-500">
                   <Icon className="h-3.5 w-3.5" />
+
                   <span className="text-[10px] font-bold uppercase tracking-[0.08em]">
                     {label}
                   </span>
@@ -745,8 +773,15 @@ export default async function AgendaPage({
         </div>
       </header>
 
+      {partialData && (
+        <div className="rounded-2xl border border-amber-300/20 bg-amber-300/[0.06] px-4 py-3 text-sm leading-6 text-amber-100/80">
+          Parte dos dados da agenda não pôde ser carregada. O painel continua
+          disponível e nenhum dado foi alterado.
+        </div>
+      )}
+
       <div className="rounded-[1.4rem] border border-cyan-300/15 bg-cyan-300/[0.045] px-4 py-3 text-sm leading-6 text-cyan-100/75">
-        A agenda agora mostra blocos de tempo legíveis:{" "}
+        A agenda mostra blocos de tempo legíveis:{" "}
         <strong className="text-emerald-200">
           Livre
         </strong>
