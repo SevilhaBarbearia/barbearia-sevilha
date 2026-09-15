@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Manrope } from "next/font/google";
 import "./globals.css";
 
-import { NavigationLoadingBar } from "@/components/ui/NavigationLoadingBar";
+import { AppRouteLoader } from "@/components/ui/AppRouteLoader";
 import { AuthProvider } from "@/lib/auth/auth-provider";
 
 const manrope = Manrope({
@@ -29,7 +29,7 @@ export default function RootLayout({
       className={manrope.variable}
     >
       <body>
-        <NavigationLoadingBar />
+        <AppRouteLoader />
 
         <AuthProvider>
           {children}
