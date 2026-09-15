@@ -41,8 +41,21 @@ export default async function ClienteLayout({
   const supabase =
     await createClient();
 
-  const { data: settings } =
-    await supabase
+  /*
+   * Eu faço a associação de reservas guest no layout da área do cliente.
+   *
+   * Dessa forma a correção não depende de o usuário abrir primeiro
+   * "Meus agendamentos". Histórico, fidelidade e as demais páginas
+   * autenticadas passam pela mesma etapa de reconciliação.
+   *
+   * A função do banco é idempotente e só associa reservas cuja identidade
+   * atende aos critérios seguros da migration 026.
+   */
+  const [
+    { data: settings },
+    { error: claimError },
+  ] = await Promise.all([
+    supabase
       .from("business_settings")
       .select(
         "business_name,logo_url",
@@ -51,7 +64,30 @@ export default async function ClienteLayout({
         "barbershop_id",
         barbershop.id,
       )
-      .maybeSingle();
+      .maybeSingle(),
+
+    supabase.rpc(
+      "claim_my_guest_appointments",
+      {
+        target_barbershop_id:
+          barbershop.id,
+      },
+    ),
+  ]);
+
+  if (claimError) {
+    /*
+     * Eu não derrubo a área do cliente se a reconciliação falhar.
+     * A RLS continua sendo a barreira de autorização e o erro fica
+     * disponível no log do servidor para diagnóstico.
+     */
+    console.error(
+      "[customer-layout:claim]",
+      claimError.code ??
+        "UNKNOWN",
+      claimError.message,
+    );
+  }
 
   const brandName =
     settings?.business_name ||

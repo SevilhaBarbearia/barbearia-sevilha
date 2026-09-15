@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   History,
 } from "lucide-react";
 
@@ -14,6 +15,16 @@ import { formatarData } from "@/lib/dates";
 import { createClient } from "@/lib/supabase/server";
 import { formatarMoeda } from "@/lib/utils";
 
+function singleRelation<T>(
+  value: T | T[] | null | undefined,
+): T | null {
+  if (Array.isArray(value)) {
+    return value[0] ?? null;
+  }
+
+  return value ?? null;
+}
+
 export default async function HistoricoPage({
   params,
 }: {
@@ -26,42 +37,67 @@ export default async function HistoricoPage({
   const barbershop =
     await requireBarbershop(slug);
 
-  const { user } =
-    await exigirPerfilCompleto(
-      slug,
-    );
+  await exigirPerfilCompleto(
+    slug,
+  );
 
   const supabase =
     await createClient();
 
-  const { data } =
-    await supabase
-      .from("appointments")
-      .select(
-        "*, services(name), barbers(name), presencial_payments(amount, method, status)",
-      )
-      .eq(
-        "barbershop_id",
-        barbershop.id,
-      )
-      .eq(
-        "client_id",
-        user.id,
-      )
-      .in(
-        "status",
-        [
-          "completed",
-          "no_show",
-          "canceled",
-        ],
-      )
-      .order(
-        "start_at",
-        {
-          ascending: false,
-        },
-      );
+  /*
+   * Eu filtro o tenant e deixo a RLS decidir quais agendamentos
+   * pertencem à identidade autenticada.
+   *
+   * Isso evita voltar ao problema antigo de depender exclusivamente
+   * de appointments.client_id.
+   */
+  const {
+    data,
+    error,
+  } = await supabase
+    .from("appointments")
+    .select(
+      `
+        id,
+        start_at,
+        total_price,
+        status,
+        public_reference,
+        services!appointments_service_tenant_fk (
+          name
+        ),
+        barbers!appointments_barber_tenant_fk (
+          name
+        )
+      `,
+    )
+    .eq(
+      "barbershop_id",
+      barbershop.id,
+    )
+    .in(
+      "status",
+      [
+        "completed",
+        "no_show",
+        "canceled",
+      ],
+    )
+    .order(
+      "start_at",
+      {
+        ascending: false,
+      },
+    );
+
+  if (error) {
+    console.error(
+      "[customer-history:list]",
+      error.code ??
+        "UNKNOWN",
+      error.message,
+    );
+  }
 
   return (
     <div className="grid gap-4">
@@ -80,38 +116,78 @@ export default async function HistoricoPage({
         </p>
       </div>
 
-      {data?.map((item) => (
-        <Card key={item.id}>
-          <CardTitle>
-            {item.services?.name ??
-              "Atendimento"}
-          </CardTitle>
+      {error && (
+        <div
+          role="alert"
+          className="flex items-start gap-3 rounded-3xl border border-red-200 bg-red-50 p-4 text-red-800"
+        >
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
 
-          <CardDescription className="mt-2">
-            {formatarData(
-              item.start_at,
-              barbershop.timezone,
-            )}{" "}
-            •{" "}
-            {item.barbers?.name ??
-              "Profissional"}{" "}
-            •{" "}
-            {formatarMoeda(
-              Number(
-                item.total_price,
-              ),
-            )}
-          </CardDescription>
-        </Card>
-      ))}
+          <div>
+            <p className="font-extrabold">
+              Não foi possível carregar o histórico
+            </p>
 
-      {!data?.length && (
-        <Card>
-          <CardDescription>
-            Nenhum histórico encontrado nesta barbearia.
-          </CardDescription>
-        </Card>
+            <p className="mt-1 text-sm leading-6">
+              A falha de carregamento não significa que seu histórico foi
+              apagado. Atualize a página em instantes.
+            </p>
+          </div>
+        </div>
       )}
+
+      {!error &&
+        data?.map((item) => {
+          const service =
+            singleRelation(
+              item.services,
+            );
+
+          const barber =
+            singleRelation(
+              item.barbers,
+            );
+
+          return (
+            <Card key={item.id}>
+              <CardTitle>
+                {service?.name ??
+                  "Atendimento"}
+              </CardTitle>
+
+              <CardDescription className="mt-2">
+                {formatarData(
+                  item.start_at,
+                  barbershop.timezone,
+                )}{" "}
+                •{" "}
+                {barber?.name ??
+                  "Profissional"}{" "}
+                •{" "}
+                {formatarMoeda(
+                  Number(
+                    item.total_price,
+                  ),
+                )}
+              </CardDescription>
+
+              {item.public_reference && (
+                <p className="mt-3 font-mono text-xs text-[var(--text-muted)]">
+                  {item.public_reference}
+                </p>
+              )}
+            </Card>
+          );
+        })}
+
+      {!error &&
+        !data?.length && (
+          <Card>
+            <CardDescription>
+              Nenhum histórico encontrado nesta barbearia.
+            </CardDescription>
+          </Card>
+        )}
     </div>
   );
 }

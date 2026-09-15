@@ -1,27 +1,120 @@
-# Validação da entrega
+# Validação final do produto principal
 
-Validação local concluída em 13/09/2026.
+Este documento substitui números antigos de migrations/testes e define o gate
+atual de release.
 
-| Verificação | Resultado |
-|---|---|
-| TypeScript do Next.js | Aprovado pelo typecheck e pelo build |
-| Build de produção | Aprovado; rotas operacionais com slug |
-| Testes Node | 13 entradas aprovadas: 12 cenários de autorização e uma suíte de integração de banco |
-| Banco PGlite | 21 migrations e seed de desenvolvimento executados |
-| Edge Function/Deno | Verificação de tipos aprovada |
-| Testes da rotina de e-mail | 3 aprovados, com chamadas externas simuladas |
-| Formatação do código web | Prettier aplicado |
+## Gate local
 
-## Cenários do banco
+Antes de qualquer deploy:
 
-A suíte executa SQL real em PostgreSQL embarcado e cobre criação transacional da empresa, unidades da mesma organização, preservação de reserva anterior à migração, atualização de cadastro e preferências, negação de gravação direta de reservas, disponibilidade em fuso local, conflito de horários, referência entre tenants recusada, isolamento de proprietário, conclusão sem duplicação de pontos, resgate sem saldo negativo, avaliação de uso único, payload privado, aniversário idempotente, reclamação da fila, novas tentativas e revogação do consentimento.
+```powershell
+Remove-Item -Recurse -Force .next -ErrorAction SilentlyContinue
+npm run validate
+```
 
-Os testes do worker verificam método/autorização, link da unidade correta, envio com chave idempotente, remoção do token após confirmação e reagendamento de falha.
+`npm run validate` executa:
 
-## Limites da validação
+```text
+TypeScript
+→ testes Node/PGlite
+→ build de produção do Next.js
+```
 
-Auth, JWT e as tabelas de Storage são simulados no PGlite. A suíte não inicia a infraestrutura completa do Supabase, não executa `pg_cron`/`pg_net` e não simula carga com várias conexões concorrentes. A proteção de concorrência usa transações, bloqueios de linha e a constraint de exclusão do PostgreSQL; o teste confirma a rejeição de sobreposição.
+A release só deve avançar se os três estágios terminarem sem erro.
 
-O build usou variáveis públicas fictícias para compilar. Não houve conexão com o banco de produção, publicação na Vercel, configuração de domínio, login Google real, upload ao Storage real ou envio de e-mail real. Esses fluxos precisam das credenciais do ambiente descritas nos guias. Nenhuma mensagem foi enviada a terceiros nesta validação.
+## O que os testes cobrem
 
-As listagens operacionais têm limites de página/consulta para o piloto; totais de faturamento e satisfação são agregados diretamente no banco. A entrega não inclui WhatsApp, cobrança recorrente, domínio próprio por unidade, expiração automática de pontos ou relatórios avançados.
+A suíte inclui:
+
+- autorização administrativa por senha;
+- isolamento entre administradores de tenants diferentes;
+- criação transacional de tenant;
+- referências cruzadas entre tenants recusadas;
+- RLS e operações críticas via RPC;
+- conflito de horários;
+- conflito de horário do mesmo cliente;
+- alinhamento da grade configurável;
+- conclusão de atendimento;
+- fidelidade;
+- feedback;
+- notificações;
+- hardening de headers;
+- reserva guest;
+- vínculo da reserva guest à identidade autenticada correta;
+- proteção contra reivindicação por outro e-mail;
+- invariantes da release atual.
+
+## Banco real
+
+Depois de aplicar as migrations até `026_customer_appointment_ownership.sql`,
+execute no SQL Editor:
+
+```text
+supabase/verification/release_readiness.sql
+```
+
+Esse arquivo não altera dados.
+
+Os checks de funções/triggers devem retornar `true`.
+
+Os seguintes campos devem retornar `0`:
+
+```text
+appointment_customer_tenant_mismatch
+appointment_barber_tenant_mismatch
+appointment_service_tenant_mismatch
+payment_tenant_mismatch
+```
+
+## Pós-deploy
+
+Configure:
+
+```powershell
+$env:SITE_URL="https://SEU-DOMINIO"
+$env:TENANT_SLUG="sevilha"
+```
+
+e execute:
+
+```powershell
+npm run smoke:prod
+```
+
+O smoke confere rotas públicas, login administrativo e headers de segurança.
+Ele não envia reservas, não efetua pagamentos e não altera o banco.
+
+## Validação manual
+
+No tenant piloto confirme:
+
+- página pública responsiva;
+- Google opcional;
+- reserva com conta;
+- reserva sem conta;
+- "Meus agendamentos";
+- histórico;
+- cancelamento;
+- agenda administrativa;
+- conclusão + pagamento;
+- dashboard;
+- filtros de reservas;
+- loading com tesoura;
+- sessão expirada após 30 minutos sem atividade.
+
+## Multi-tenant
+
+A validação final de um segundo tenant está documentada em:
+
+```text
+docs/SECOND_TENANT_CANARY.md
+```
+
+## Limites
+
+Os testes locais simulam Auth/JWT em PostgreSQL embarcado. Login Google real,
+domínio, entrega real de e-mail e comportamento da Vercel precisam ser
+confirmados no ambiente publicado.
+
+O Platform Admin não faz parte desta etapa. Ele será construído depois que o
+produto principal e o segundo tenant estiverem validados.

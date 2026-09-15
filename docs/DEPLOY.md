@@ -1,8 +1,10 @@
 # Publicação
 
-## Preparação
+## 1. Ambiente
 
-Aplique o SQL e configure as contas conforme os demais guias. Configure no projeto Vercel Node.js 22 ou superior e as variáveis:
+Na Vercel use Node.js 22 ou superior.
+
+Variáveis da aplicação web:
 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://SEU_PROJETO.supabase.co
@@ -10,26 +12,91 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=SUA_CHAVE_PUBLICA
 NEXT_PUBLIC_SITE_URL=https://SEU_DOMINIO.com.br
 ```
 
-Use `npm ci` para instalar e `npm run build` para construir. O diretório raiz é a pasta que contém `package.json`. Se conectar a um repositório Git, publique os arquivos dessa pasta; não envie `node_modules`, `.next` nem arquivos de segredos.
+Opcional, apenas para rollback visual emergencial:
 
-## Autenticação
+```env
+UI_FORCE_LEGACY=false
+```
 
-Habilite Google para clientes no Supabase Auth. Configure a URL do site e permita o callback da aplicação:
+A aplicação não precisa de Edge Config/Global Config para escolher a interface.
+
+## 2. Banco
+
+Aplique as migrations em ordem até:
+
+```text
+026_customer_appointment_ownership.sql
+```
+
+Depois execute, somente para conferência:
+
+```text
+supabase/verification/release_readiness.sql
+```
+
+O arquivo de verificação é somente leitura.
+
+## 3. Google
+
+Habilite Google no Supabase Auth.
+
+Configure:
 
 ```text
 https://SEU_DOMINIO.com.br/auth/callback
 ```
 
-Na configuração OAuth do Google, use também o callback do Supabase indicado pelo painel do provedor. São dois callbacks com funções diferentes.
+Para desenvolvimento permita também:
 
-Para desenvolvimento, permita `http://localhost:3000/auth/callback` no Supabase.
+```text
+http://localhost:3000/auth/callback
+```
 
-## E-mail
+A reserva sem conta continua disponível mesmo quando Google estiver
+desabilitado.
 
-Publique a Edge Function e ative o cron seguindo `MIGRACAO_SAAS.md`. As chaves de Resend e service role ficam no Supabase, nunca no navegador. A aplicação web não depende da chave de serviço.
+## 4. Sessão
 
-## Conferência no ambiente configurado
+A aplicação encerra a sessão local depois de **30 minutos sem atividade
+humana**.
 
-Faça um fluxo real com conta de teste: login, cadastro, reserva, cancelamento, nova reserva, conclusão, crédito de pontos, resgate e pesquisa. Confirme recebimento do e-mail no destinatário de teste. Confira o painel com dois proprietários e duas unidades diferentes.
+Clique, toque, teclado e scroll renovam o período. Renovação automática do JWT
+não conta como atividade.
 
-Essas verificações externas dependem das suas credenciais e não foram executadas nesta entrega. Avalie os planos e termos dos provedores ao publicar comercialmente; este projeto não contrata nenhum serviço.
+Essa regra está em:
+
+```text
+src/lib/auth/auth-provider.tsx
+```
+
+## 5. Validação antes do push
+
+```powershell
+Remove-Item -Recurse -Force .next -ErrorAction SilentlyContinue
+npm run validate
+```
+
+## 6. Pós-deploy
+
+```powershell
+$env:SITE_URL="https://SEU-DOMINIO"
+$env:TENANT_SLUG="sevilha"
+
+npm run smoke:prod
+```
+
+## 7. E-mail
+
+As chaves de Resend/service role permanecem no Supabase/Edge Function, nunca
+no navegador.
+
+## 8. Segundo tenant
+
+Siga:
+
+```text
+docs/SECOND_TENANT_CANARY.md
+```
+
+Somente depois desse canary o produto principal deve ser considerado pronto
+para escalar para novos clientes.

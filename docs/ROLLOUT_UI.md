@@ -1,12 +1,64 @@
-# Rollout seguro da nova interface
+# Rollout da interface Warm Premium
 
-Este documento define o processo da migração visual Warm Premium sem alterar as regras SaaS existentes.
+A interface **Warm Premium é o padrão do produto**.
 
-## Objetivo
+O projeto não depende mais de Global Config, Edge Config, branch específica ou
+lista externa de tenants para decidir qual interface deve ser exibida. Essa
+simplificação reduz o risco operacional e evita que um alias antigo da Vercel
+aponte para uma versão visual diferente.
 
-A nova interface fica atrás de uma configuração runtime por tenant. A aplicação mantém a interface legada disponível durante o canary, permitindo retorno imediato sem novo deploy.
+## Comportamento normal
 
-A chave usada no Global Config é:
+Sem configuração adicional:
 
 ```text
-warmPremiumUiTenants
+tenant → Warm Premium
+```
+
+Cada tenant continua recebendo seus próprios dados, logo, imagens e cores a
+partir do `barbershop_id` e do slug correspondente.
+
+## Rollback emergencial
+
+Existe somente uma chave de emergência no servidor:
+
+```env
+UI_FORCE_LEGACY=true
+```
+
+Use essa variável apenas se for necessário voltar temporariamente para a
+interface antiga. Depois de alterar a variável é necessário um novo deploy.
+
+No uso normal:
+
+```env
+UI_FORCE_LEGACY=false
+```
+
+ou simplesmente não configure a variável.
+
+## Canary
+
+A Sevilha é o tenant piloto principal.
+
+Antes de cadastrar uma segunda barbearia real, execute:
+
+```powershell
+npm run validate
+```
+
+Depois do deploy:
+
+```powershell
+$env:SITE_URL="https://SEU-DOMINIO"
+$env:TENANT_SLUG="sevilha"
+npm run smoke:prod
+```
+
+O segundo tenant deve ser validado conforme `SECOND_TENANT_CANARY.md`.
+
+## Regra
+
+Nunca use o nome Sevilha como identidade fixa em regras de negócio. O slug
+`sevilha` pode ser usado apenas como dado do tenant piloto. Toda consulta de
+negócio deve continuar limitada pelo `barbershop_id`.
