@@ -59,8 +59,6 @@ function getTenantsForEnvironment(
 }
 
 function getLocalOverride(): string[] {
-  // Eu só permito override manual fora da Vercel
-  // e fora de builds de produção.
   if (
     process.env.VERCEL_ENV ||
     process.env.NODE_ENV === "production"
@@ -69,30 +67,23 @@ function getLocalOverride(): string[] {
   }
 
   return normalizeTenantList(
-    process.env.UI_ROLLOUT_LOCAL_TENANTS?.split(
-      ",",
-    ) ?? [],
+    process.env.UI_ROLLOUT_LOCAL_TENANTS?.split(",") ?? [],
   );
 }
 
-async function readRolloutTenantsFromGlobalConfig(): Promise<
-  string[]
-> {
-  // Eu retorno a interface legada quando o Global Config
-  // não está conectado ao ambiente atual.
-  if (!process.env.GLOBAL_CONFIG) {
-    return [];
-  }
-
+async function readRolloutTenantsFromGlobalConfig(): Promise<string[]> {
   try {
-    const value = await get(
-      ROLLOUT_CONFIG_KEY,
-    );
+    /*
+     * Eu deixo o SDK oficial resolver a conexão com o Global Config.
+     * Não verifico process.env.GLOBAL_CONFIG antes da leitura porque essa
+     * variável é detalhe da integração da Vercel e pode não estar exposta
+     * da mesma forma em todos os runtimes/deployments.
+     */
+    const value = await get(ROLLOUT_CONFIG_KEY);
 
     return getTenantsForEnvironment(value);
   } catch {
-    // Eu falho fechado.
-    // Qualquer problema no Global Config mantém a UI legada.
+    // Eu falho fechado: qualquer problema mantém a interface legada.
     return [];
   }
 }
@@ -104,14 +95,11 @@ export async function getTenantUiVersion(
     .trim()
     .toLowerCase();
 
-  const localOverride =
-    getLocalOverride();
+  const localOverride = getLocalOverride();
 
   if (
     localOverride.includes("*") ||
-    localOverride.includes(
-      normalizedSlug,
-    )
+    localOverride.includes(normalizedSlug)
   ) {
     return "warm-premium";
   }
@@ -121,9 +109,7 @@ export async function getTenantUiVersion(
 
   const enabled =
     enabledTenants.includes("*") ||
-    enabledTenants.includes(
-      normalizedSlug,
-    );
+    enabledTenants.includes(normalizedSlug);
 
   return enabled
     ? "warm-premium"
