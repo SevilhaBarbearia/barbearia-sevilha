@@ -14,6 +14,8 @@ import { Scissors } from "lucide-react";
 
 import styles from "./AppRouteLoader.module.css";
 
+const MIN_VISIBLE_MS = 350;
+
 function isSamePageOnlyHash(
   target: URL,
 ) {
@@ -54,16 +56,19 @@ function isInternalAnchorClick(
     rawHref.startsWith(
       "mailto:",
     ) ||
-    rawHref.startsWith("tel:")
+    rawHref.startsWith(
+      "tel:",
+    )
   ) {
     return false;
   }
 
   try {
-    const target = new URL(
-      anchor.href,
-      window.location.href,
-    );
+    const target =
+      new URL(
+        anchor.href,
+        window.location.href,
+      );
 
     if (
       target.origin !==
@@ -73,7 +78,9 @@ function isInternalAnchorClick(
     }
 
     if (
-      rawHref.startsWith("#") ||
+      rawHref.startsWith(
+        "#",
+      ) ||
       isSamePageOnlyHash(
         target,
       )
@@ -101,7 +108,10 @@ function readableLinkLabel(
     "";
 
   const normalized = raw
-    .replace(/\s+/g, " ")
+    .replace(
+      /\s+/g,
+      " ",
+    )
     .trim();
 
   if (!normalized) {
@@ -123,19 +133,30 @@ export function AppRouteLoader() {
   const searchParams =
     useSearchParams();
 
-  const routeKey = useMemo(
-    () =>
-      `${pathname}?${searchParams.toString()}`,
-    [pathname, searchParams],
+  const routeKey =
+    useMemo(
+      () =>
+        `${pathname}?${searchParams.toString()}`,
+      [
+        pathname,
+        searchParams,
+      ],
+    );
+
+  const [
+    visible,
+    setVisible,
+  ] = useState(false);
+
+  const [
+    message,
+    setMessage,
+  ] = useState(
+    "Preparando a próxima tela...",
   );
 
-  const [visible, setVisible] =
-    useState(false);
-
-  const [message, setMessage] =
-    useState(
-      "Preparando a próxima tela...",
-    );
+  const startedAt =
+    useRef(0);
 
   const safetyTimer =
     useRef<ReturnType<
@@ -163,6 +184,9 @@ export function AppRouteLoader() {
   ) {
     clearSafetyTimer();
 
+    startedAt.current =
+      Date.now();
+
     setMessage(
       customMessage?.trim() ||
         "Preparando a próxima tela...",
@@ -171,33 +195,62 @@ export function AppRouteLoader() {
     setVisible(true);
 
     safetyTimer.current =
-      setTimeout(() => {
-        setVisible(false);
-      }, 8000);
+      setTimeout(
+        () => {
+          setVisible(
+            false,
+          );
+        },
+        8000,
+      );
   }
 
   /*
-   * Só encerramos o overlay quando a rota realmente mudou.
-   * Antes ele também reagia ao próprio setVisible(true), o que podia
-   * esconder o loading depois de poucos milissegundos.
+   * Aqui está a correção principal.
+   *
+   * O loader só termina quando a rota muda.
+   *
+   * Eu não coloco `visible` nas dependências,
+   * porque setVisible(true) não pode ser tratado
+   * como conclusão da navegação.
    */
   useEffect(() => {
-    if (!mounted.current) {
-      mounted.current = true;
+    if (
+      !mounted.current
+    ) {
+      mounted.current =
+        true;
+
       return;
     }
 
     clearSafetyTimer();
 
-    const timer = setTimeout(
-      () => {
-        setVisible(false);
-      },
-      260,
-    );
+    const elapsed =
+      Date.now() -
+      startedAt.current;
+
+    const remaining =
+      Math.max(
+        0,
+        MIN_VISIBLE_MS -
+          elapsed,
+      );
+
+    const timer =
+      setTimeout(
+        () => {
+          setVisible(
+            false,
+          );
+        },
+        remaining,
+      );
 
     return () =>
-      clearTimeout(timer);
+      clearTimeout(
+        timer,
+      );
   }, [routeKey]);
 
   useEffect(() => {
@@ -217,7 +270,9 @@ export function AppRouteLoader() {
       }
 
       const anchor =
-        target.closest("a");
+        target.closest(
+          "a",
+        );
 
       if (
         !(
@@ -250,11 +305,6 @@ export function AppRouteLoader() {
       );
     }
 
-    /*
-     * Form actions não entram no overlay global.
-     * Muitas delas retornam validações sem trocar de rota; nesses casos
-     * o próprio formulário mostra o estado de processamento.
-     */
     document.addEventListener(
       "click",
       onClick,
@@ -360,11 +410,13 @@ export function AppRouteLoader() {
                 styles.bar
               }
             />
+
             <span
               className={
                 styles.bar
               }
             />
+
             <span
               className={
                 styles.bar

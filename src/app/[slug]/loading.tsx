@@ -1,42 +1,38 @@
+import {
+  Scissors,
+} from "lucide-react";
+
 export default function TenantLoading() {
   return (
     <main
-      className="min-h-screen bg-[#F7F3EC]"
+      className="grid min-h-[70vh] place-items-center bg-[#F7F3EC] px-4 py-12"
       role="status"
+      aria-live="polite"
       aria-label="Carregando página"
     >
-      <div className="border-b border-black/[0.07] bg-white/80 px-4 py-4">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="h-11 w-11 animate-pulse rounded-2xl bg-black/[0.08] motion-reduce:animate-none" />
-
-            <div>
-              <div className="h-3.5 w-32 animate-pulse rounded-full bg-black/[0.09] motion-reduce:animate-none" />
-              <div className="mt-2 h-2.5 w-20 animate-pulse rounded-full bg-black/[0.06] motion-reduce:animate-none" />
-            </div>
-          </div>
-
-          <div className="h-10 w-28 animate-pulse rounded-xl bg-[#D6A63C]/30 motion-reduce:animate-none" />
-        </div>
-      </div>
-
-      <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:px-6 lg:grid-cols-2 lg:items-center lg:py-16">
-        <div>
-          <div className="h-5 w-40 animate-pulse rounded-full bg-[#D6A63C]/20 motion-reduce:animate-none" />
-
-          <div className="mt-6 h-12 w-full max-w-xl animate-pulse rounded-2xl bg-black/[0.09] motion-reduce:animate-none" />
-          <div className="mt-3 h-12 w-4/5 max-w-lg animate-pulse rounded-2xl bg-black/[0.09] motion-reduce:animate-none" />
-
-          <div className="mt-6 h-4 w-full max-w-lg animate-pulse rounded-full bg-black/[0.06] motion-reduce:animate-none" />
-          <div className="mt-3 h-4 w-3/4 max-w-md animate-pulse rounded-full bg-black/[0.06] motion-reduce:animate-none" />
-
-          <div className="mt-8 flex gap-3">
-            <div className="h-11 w-36 animate-pulse rounded-xl bg-[#D6A63C]/30 motion-reduce:animate-none" />
-            <div className="h-11 w-32 animate-pulse rounded-xl bg-black/[0.07] motion-reduce:animate-none" />
-          </div>
+      <div className="w-full max-w-sm rounded-[2rem] border border-[#E5D9C5] bg-white/90 p-7 text-center shadow-[0_24px_70px_rgba(85,62,32,0.10)] backdrop-blur">
+        <div className="mx-auto grid h-20 w-20 place-items-center rounded-full border border-[#E5C98F] bg-[#FBF3E2] shadow-[0_0_0_10px_rgba(214,166,60,0.06)]">
+          <Scissors
+            aria-hidden="true"
+            className="h-8 w-8 animate-spin text-[#B88323] motion-reduce:animate-none"
+          />
         </div>
 
-        <div className="aspect-[4/3] animate-pulse rounded-[2rem] border border-black/[0.06] bg-black/[0.06] motion-reduce:animate-none" />
+        <h2 className="mt-6 text-lg font-extrabold text-[#24221E]">
+          Preparando sua tela
+        </h2>
+
+        <p className="mt-2 text-sm leading-6 text-[#756E64]">
+          Estamos carregando os
+          dados da barbearia.
+        </p>
+
+        <div
+          className="mx-auto mt-5 h-1.5 w-40 overflow-hidden rounded-full bg-[#EEE7DC]"
+          aria-hidden="true"
+        >
+          <div className="h-full w-2/3 animate-pulse rounded-full bg-[#D6A63C] motion-reduce:animate-none" />
+        </div>
       </div>
 
       <span className="sr-only">

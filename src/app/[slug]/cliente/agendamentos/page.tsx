@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   CalendarCheck,
   CheckCircle2,
   Clock3,
@@ -6,7 +7,10 @@ import {
 
 import { ActionForm } from "@/components/forms/ActionForm";
 import { Badge } from "@/components/ui/Badge";
-import { Button, ButtonLink } from "@/components/ui/Button";
+import {
+  Button,
+  ButtonLink,
+} from "@/components/ui/Button";
 import {
   Card,
   CardDescription,
@@ -20,16 +24,29 @@ import { formatarData } from "@/lib/dates";
 import { createClient } from "@/lib/supabase/server";
 import { formatarMoeda } from "@/lib/utils";
 
-const STATUS_LABELS: Record<
-  string,
-  string
-> = {
+const STATUS_LABELS: Record<string, string> = {
   pending: "Pendente",
   confirmed: "Confirmado",
   completed: "Concluído",
   canceled: "Cancelado",
   no_show: "Não compareceu",
 };
+
+/*
+ * O Supabase pode inferir uma relação como objeto único
+ * ou como array, principalmente quando existem FKs compostas.
+ *
+ * Eu normalizo os dois formatos aqui em vez de utilizar `any`.
+ */
+function singleRelation<T>(
+  value: T | T[] | null | undefined,
+): T | null {
+  if (Array.isArray(value)) {
+    return value[0] ?? null;
+  }
+
+  return value ?? null;
+}
 
 function firstParam(
   value:
@@ -49,6 +66,7 @@ export default async function MeusAgendamentosPage({
   params: Promise<{
     slug: string;
   }>;
+
   searchParams: Promise<
     Record<
       string,
@@ -56,44 +74,128 @@ export default async function MeusAgendamentosPage({
     >
   >;
 }) {
-  const { slug } = await params;
-  const query = await searchParams;
+  const { slug } =
+    await params;
+
+  const query =
+    await searchParams;
 
   const barbershop =
-    await requireBarbershop(slug);
-
-  const { user } =
-    await exigirPerfilCompleto(
+    await requireBarbershop(
       slug,
     );
+
+  await exigirPerfilCompleto(
+    slug,
+  );
 
   const supabase =
     await createClient();
 
-  const { data: appointments } =
-    await supabase
-      .from("appointments")
-      .select(
-        "*, services(name), barbers(name)",
-      )
-      .eq(
-        "barbershop_id",
+  /*
+   * Antes de consultar a agenda eu tento vincular reservas
+   * feitas anteriormente como guest.
+   *
+   * A associação ocorre no banco somente quando a identidade
+   * autenticada corresponde aos critérios seguros definidos
+   * pela migration 026.
+   */
+  const {
+    error: claimError,
+  } = await supabase.rpc(
+    "claim_my_guest_appointments",
+    {
+      target_barbershop_id:
         barbershop.id,
-      )
-      .eq(
-        "client_id",
-        user.id,
-      )
-      .order(
-        "start_at",
-        {
-          ascending: false,
-        },
-      );
+    },
+  );
+
+  /*
+   * Falhar ao reivindicar uma reserva antiga não deve derrubar
+   * a página. Eu registro o problema no servidor e continuo
+   * para consultar as reservas que o RLS permitir.
+   */
+  if (claimError) {
+    console.error(
+      "[customer-appointments:claim]",
+      claimError.code ??
+        "UNKNOWN",
+      claimError.message,
+    );
+  }
+
+  /*
+   * Eu filtro apenas pelo tenant.
+   *
+   * Não uso mais:
+   *
+   *   .eq("client_id", user.id)
+   *
+   * porque reservas guest originalmente possuem client_id = null.
+   *
+   * A autorização de quais registros podem ser vistos fica no RLS:
+   * - client_id da conta;
+   * - ou customer vinculado à identidade autenticada;
+   * - sempre respeitando o tenant.
+   */
+  const {
+    data: appointments,
+    error: appointmentsError,
+  } = await supabase
+    .from("appointments")
+    .select(
+      `
+        id,
+        customer_id,
+        client_id,
+        service_id,
+        barber_id,
+        start_at,
+        end_at,
+        status,
+        total_price,
+        public_reference,
+        services!appointments_service_tenant_fk (
+          name
+        ),
+        barbers!appointments_barber_tenant_fk (
+          name
+        )
+      `,
+    )
+    .eq(
+      "barbershop_id",
+      barbershop.id,
+    )
+    .order(
+      "start_at",
+      {
+        ascending: false,
+      },
+    );
+
+  /*
+   * A versão antiga ignorava completamente esse erro.
+   *
+   * Com isso um problema de RLS/PostgREST podia aparecer para
+   * o cliente como "Sua agenda está vazia", o que é incorreto.
+   */
+  if (appointmentsError) {
+    console.error(
+      "[customer-appointments:list]",
+      appointmentsError.code ??
+        "UNKNOWN",
+      appointmentsError.message,
+    );
+  }
 
   const reservado =
-    firstParam(query.reservado) ===
-    "1";
+    firstParam(
+      query.reservado,
+    ) === "1";
+
+  const items =
+    appointments ?? [];
 
   return (
     <div className="grid gap-5">
@@ -101,6 +203,7 @@ export default async function MeusAgendamentosPage({
         <div>
           <Badge>
             <CalendarCheck className="h-3.5 w-3.5" />
+
             Cliente
           </Badge>
 
@@ -137,12 +240,56 @@ export default async function MeusAgendamentosPage({
         </div>
       )}
 
-      {appointments?.map(
-        (item) => {
-          const active = [
-            "pending",
-            "confirmed",
-          ].includes(item.status);
+      {appointmentsError && (
+        <div
+          role="alert"
+          className="flex items-start gap-3 rounded-3xl border border-red-200 bg-red-50 p-4 text-red-800"
+        >
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+
+          <div>
+            <p className="font-extrabold">
+              Não foi possível carregar sua agenda
+            </p>
+
+            <p className="mt-1 text-sm leading-6">
+              Isso é uma falha de carregamento e não significa que você não
+              possui agendamentos. Atualize a página em instantes.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {!appointmentsError &&
+        items.map((item) => {
+          /*
+           * Aqui está a correção dos dois erros do TypeScript.
+           *
+           * Se o Supabase retornar:
+           *
+           * [{ name: "Barba" }]
+           *
+           * eu transformo em:
+           *
+           * { name: "Barba" }
+           */
+          const service =
+            singleRelation(
+              item.services,
+            );
+
+          const barber =
+            singleRelation(
+              item.barbers,
+            );
+
+          const active =
+            [
+              "pending",
+              "confirmed",
+            ].includes(
+              item.status,
+            );
 
           return (
             <Card
@@ -153,13 +300,14 @@ export default async function MeusAgendamentosPage({
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <CardTitle>
-                      {item.services?.name ??
+                      {service?.name ??
                         "Serviço"}
                     </CardTitle>
 
                     <span
                       className={[
                         "rounded-full px-2.5 py-1 text-[11px] font-extrabold",
+
                         active
                           ? "bg-emerald-50 text-emerald-700"
                           : "bg-[#F1EDE6] text-[var(--text-muted)]",
@@ -173,13 +321,14 @@ export default async function MeusAgendamentosPage({
                   </div>
 
                   <CardDescription className="mt-2">
-                    {item.barbers?.name ??
+                    {barber?.name ??
                       "Profissional"}
                   </CardDescription>
 
                   <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm font-semibold text-[var(--text-muted)]">
                     <span className="inline-flex items-center gap-2">
                       <Clock3 className="h-4 w-4 text-[var(--tenant-accent)]" />
+
                       {formatarData(
                         item.start_at,
                         barbershop.timezone,
@@ -193,6 +342,12 @@ export default async function MeusAgendamentosPage({
                         ),
                       )}
                     </span>
+
+                    {item.public_reference && (
+                      <span className="font-mono text-xs">
+                        {item.public_reference}
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -213,7 +368,9 @@ export default async function MeusAgendamentosPage({
                     <input
                       type="hidden"
                       name="appointment_id"
-                      value={item.id}
+                      value={
+                        item.id
+                      }
                     />
 
                     <input
@@ -233,27 +390,27 @@ export default async function MeusAgendamentosPage({
               </div>
             </Card>
           );
-        },
-      )}
+        })}
 
-      {!appointments?.length && (
-        <Card>
-          <CardTitle>
-            Sua agenda está vazia
-          </CardTitle>
+      {!appointmentsError &&
+        !items.length && (
+          <Card>
+            <CardTitle>
+              Sua agenda está vazia
+            </CardTitle>
 
-          <CardDescription>
-            Você ainda não possui agendamentos nesta barbearia.
-          </CardDescription>
+            <CardDescription>
+              Você ainda não possui agendamentos nesta barbearia.
+            </CardDescription>
 
-          <ButtonLink
-            href={`/${barbershop.slug}/reservar`}
-            className="mt-5"
-          >
-            Reservar meu primeiro horário
-          </ButtonLink>
-        </Card>
-      )}
+            <ButtonLink
+              href={`/${barbershop.slug}/reservar`}
+              className="mt-5"
+            >
+              Reservar meu primeiro horário
+            </ButtonLink>
+          </Card>
+        )}
     </div>
   );
 }
