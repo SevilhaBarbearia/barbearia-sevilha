@@ -63,26 +63,90 @@ test(
 );
 
 test(
-  "loader global mantém a tesoura e uma duração mínima perceptível",
+  "loader global usa apenas indicador superior e não duplica o loading visual",
   () => {
     const source =
       read(
         "src/components/ui/AppRouteLoader.tsx",
       );
 
-    assert.match(
+    /*
+     * O AppRouteLoader não deve mais renderizar o modal escuro
+     * com tesoura. Ele serve apenas como resposta imediata ao clique.
+     */
+    assert.doesNotMatch(
       source,
       /Scissors/,
     );
 
     assert.match(
       source,
-      /MIN_VISIBLE_MS\s*=\s*350/,
+      /styles\.indicator/,
+    );
+
+    assert.match(
+      source,
+      /styles\.track/,
+    );
+
+    assert.match(
+      source,
+      /styles\.bar/,
+    );
+
+    assert.match(
+      source,
+      /MIN_VISIBLE_MS\s*=\s*250/,
+    );
+
+    assert.doesNotMatch(
+      source,
+      /styles\.overlay|styles\.card/,
     );
 
     assert.doesNotMatch(
       source,
       /\[routeKey,\s*visible\]/,
+    );
+  },
+);
+
+test(
+  "loadings específicos mantêm identidade visual com tesoura",
+  () => {
+    const tenantLoading =
+      read(
+        "src/app/[slug]/loading.tsx",
+      );
+
+    const adminLoading =
+      read(
+        "src/app/admin/[slug]/loading.tsx",
+      );
+
+    /*
+     * A tesoura continua nos loadings reais do Next.js:
+     * - público/cliente: Warm Premium claro;
+     * - administração: tema escuro do painel.
+     */
+    assert.match(
+      tenantLoading,
+      /Scissors/,
+    );
+
+    assert.match(
+      tenantLoading,
+      /Preparando sua tela/,
+    );
+
+    assert.match(
+      adminLoading,
+      /Scissors/,
+    );
+
+    assert.match(
+      adminLoading,
+      /Carregando administração/,
     );
   },
 );

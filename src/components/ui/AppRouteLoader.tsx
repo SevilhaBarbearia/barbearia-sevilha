@@ -10,11 +10,11 @@ import {
   usePathname,
   useSearchParams,
 } from "next/navigation";
-import { Scissors } from "lucide-react";
 
 import styles from "./AppRouteLoader.module.css";
 
-const MIN_VISIBLE_MS = 350;
+const MIN_VISIBLE_MS = 250;
+const SAFETY_TIMEOUT_MS = 8000;
 
 function isSamePageOnlyHash(
   target: URL,
@@ -94,38 +94,6 @@ function isInternalAnchorClick(
   }
 }
 
-function readableLinkLabel(
-  anchor: HTMLAnchorElement,
-) {
-  const raw =
-    anchor.getAttribute(
-      "data-loading-label",
-    ) ||
-    anchor.getAttribute(
-      "aria-label",
-    ) ||
-    anchor.textContent ||
-    "";
-
-  const normalized = raw
-    .replace(
-      /\s+/g,
-      " ",
-    )
-    .trim();
-
-  if (!normalized) {
-    return null;
-  }
-
-  return normalized.length > 42
-    ? `${normalized.slice(
-        0,
-        42,
-      )}…`
-    : normalized;
-}
-
 export function AppRouteLoader() {
   const pathname =
     usePathname();
@@ -147,13 +115,6 @@ export function AppRouteLoader() {
     visible,
     setVisible,
   ] = useState(false);
-
-  const [
-    message,
-    setMessage,
-  ] = useState(
-    "Preparando a próxima tela...",
-  );
 
   const startedAt =
     useRef(0);
@@ -179,21 +140,21 @@ export function AppRouteLoader() {
     }
   }
 
-  function startLoading(
-    customMessage?: string,
-  ) {
+  function startLoading() {
     clearSafetyTimer();
 
     startedAt.current =
       Date.now();
 
-    setMessage(
-      customMessage?.trim() ||
-        "Preparando a próxima tela...",
-    );
-
     setVisible(true);
 
+    /*
+     * Eu mantenho apenas uma proteção de segurança para evitar
+     * uma barra presa caso alguma navegação seja interrompida.
+     *
+     * O loading visual real da página continua sendo responsabilidade
+     * dos loading.tsx específicos do tenant e do admin.
+     */
     safetyTimer.current =
       setTimeout(
         () => {
@@ -201,18 +162,16 @@ export function AppRouteLoader() {
             false,
           );
         },
-        8000,
+        SAFETY_TIMEOUT_MS,
       );
   }
 
   /*
-   * Aqui está a correção principal.
+   * A barra superior serve somente como resposta imediata ao clique.
+   * Quando a rota efetivamente muda, eu a retiro após um tempo mínimo
+   * curto para evitar um "pisca" visual.
    *
-   * O loader só termina quando a rota muda.
-   *
-   * Eu não coloco `visible` nas dependências,
-   * porque setVisible(true) não pode ser tratado
-   * como conclusão da navegação.
+   * O conteúdo de carregamento da página vem dos loading.tsx do Next.js.
    */
   useEffect(() => {
     if (
@@ -287,22 +246,11 @@ export function AppRouteLoader() {
         return;
       }
 
-      const label =
-        readableLinkLabel(
-          anchor,
-        );
-
-      startLoading(
-        label
-          ? `Abrindo ${label}...`
-          : undefined,
-      );
+      startLoading();
     }
 
     function onPopState() {
-      startLoading(
-        "Atualizando a navegação...",
-      );
+      startLoading();
     }
 
     document.addEventListener(
@@ -339,7 +287,7 @@ export function AppRouteLoader() {
   return (
     <div
       className={
-        styles.overlay
+        styles.indicator
       }
       role="status"
       aria-live="polite"
@@ -347,96 +295,19 @@ export function AppRouteLoader() {
     >
       <div
         className={
-          styles.topBar
+          styles.track
         }
-      />
-
-      <div
-        className={
-          styles.card
-        }
+        aria-hidden="true"
       >
-        <div
+        <span
           className={
-            styles.badge
+            styles.bar
           }
-        >
-          Agendamento online
-        </div>
-
-        <div
-          className={
-            styles.center
-          }
-        >
-          <div
-            className={
-              styles.iconShell
-            }
-            aria-hidden="true"
-          >
-            <Scissors
-              className={
-                styles.icon
-              }
-              size={34}
-            />
-          </div>
-
-          <h2
-            className={
-              styles.title
-            }
-          >
-            Carregando
-          </h2>
-
-          <p
-            className={
-              styles.text
-            }
-          >
-            {message}
-          </p>
-
-          <div
-            className={
-              styles.bars
-            }
-            aria-hidden="true"
-          >
-            <span
-              className={
-                styles.bar
-              }
-            />
-
-            <span
-              className={
-                styles.bar
-              }
-            />
-
-            <span
-              className={
-                styles.bar
-              }
-            />
-          </div>
-
-          <p
-            className={
-              styles.helper
-            }
-          >
-            Aguarde só um
-            instante.
-          </p>
-        </div>
+        />
       </div>
 
       <span className="sr-only">
-        Carregando...
+        Carregando próxima tela...
       </span>
     </div>
   );
