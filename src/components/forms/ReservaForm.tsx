@@ -9,19 +9,29 @@ import {
 import { useFormStatus } from "react-dom";
 import {
   CalendarDays,
-  Check,
-  LockKeyhole,
+  CheckCircle2,
+  Contact,
   MessageSquareText,
   Scissors,
+  ShieldCheck,
   UserRound,
 } from "lucide-react";
 
 import { SeletorHorario } from "@/components/agendamento/SeletorHorario";
 import { ActionForm } from "@/components/forms/ActionForm";
-import { Button, ButtonLink } from "@/components/ui/Button";
-import { Input, Label, Select, Textarea } from "@/components/ui/Input";
+import { Button } from "@/components/ui/Button";
+import {
+  Input,
+  Label,
+  Select,
+  Textarea,
+} from "@/components/ui/Input";
 import { asFormAction } from "@/lib/actions/form-action";
-import { criarAgendamento } from "@/lib/agendamentos/actions";
+import {
+  criarAgendamento,
+  criarAgendamentoComCadastro,
+  criarAgendamentoConvidado,
+} from "@/lib/agendamentos/actions";
 import type { Barber, Service } from "@/lib/db/types";
 import { formatarMoeda } from "@/lib/utils";
 
@@ -39,6 +49,12 @@ type InitialSelection = {
   startAt?: string;
 };
 
+type InitialContact = {
+  name?: string;
+  phone?: string;
+  email?: string;
+};
+
 function BotaoConfirmar({
   disabled,
 }: {
@@ -51,7 +67,9 @@ function BotaoConfirmar({
       disabled={pending || disabled}
       className="w-full text-sm sm:text-base"
     >
-      {pending ? "Confirmando reserva..." : "Confirmar reserva"}
+      {pending
+        ? "Confirmando reserva..."
+        : "Confirmar reserva"}
     </Button>
   );
 }
@@ -75,6 +93,7 @@ function StepHeader({
         <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-[var(--text-muted)]">
           {step}
         </p>
+
         <Label className="mb-0 text-base">
           {title}
         </Label>
@@ -90,6 +109,7 @@ export function ReservaForm({
   authenticated,
   profileComplete,
   initialSelection,
+  initialContact,
 }: {
   services: Service[];
   barbers: BarberComServicos[];
@@ -97,14 +117,19 @@ export function ReservaForm({
   authenticated: boolean;
   profileComplete: boolean;
   initialSelection?: InitialSelection;
+  initialContact?: InitialContact;
 }) {
   const initialServiceId =
     initialSelection?.serviceId &&
-    services.some((service) => service.id === initialSelection.serviceId)
+    services.some(
+      (service) =>
+        service.id === initialSelection.serviceId,
+    )
       ? initialSelection.serviceId
       : services[0]?.id ?? "";
 
-  const [serviceId, setServiceId] = useState(initialServiceId);
+  const [serviceId, setServiceId] =
+    useState(initialServiceId);
 
   const barbeirosDoServico = useMemo(() => {
     if (!serviceId) return [];
@@ -121,27 +146,39 @@ export function ReservaForm({
   const initialBarberId =
     initialSelection?.barberId &&
     barbeirosDoServico.some(
-      (barber) => barber.id === initialSelection.barberId,
+      (barber) =>
+        barber.id === initialSelection.barberId,
     )
       ? initialSelection.barberId
       : barbeirosDoServico[0]?.id ?? "";
 
-  const [barberId, setBarberId] = useState(initialBarberId);
-  const [data, setData] = useState(initialSelection?.date ?? "");
-  const [startAt, setStartAt] = useState(initialSelection?.startAt ?? "");
+  const [barberId, setBarberId] =
+    useState(initialBarberId);
+
+  const [data, setData] =
+    useState(initialSelection?.date ?? "");
+
+  const [startAt, setStartAt] =
+    useState(initialSelection?.startAt ?? "");
 
   useEffect(() => {
-    const barbeiroContinuaDisponivel = barbeirosDoServico.some(
-      (barbeiro) => barbeiro.id === barberId,
-    );
+    const barbeiroContinuaDisponivel =
+      barbeirosDoServico.some(
+        (barbeiro) => barbeiro.id === barberId,
+      );
 
     if (!barbeiroContinuaDisponivel) {
-      setBarberId(barbeirosDoServico[0]?.id ?? "");
+      setBarberId(
+        barbeirosDoServico[0]?.id ?? "",
+      );
       setStartAt("");
     }
   }, [barbeirosDoServico, barberId]);
 
-  if (services.length === 0 || barbers.length === 0) {
+  if (
+    services.length === 0 ||
+    barbers.length === 0
+  ) {
     return (
       <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm leading-6 text-amber-900">
         Ainda não existem serviços ou profissionais ativos para reserva.
@@ -156,36 +193,24 @@ export function ReservaForm({
   const selectionReady =
     Boolean(
       serviceId &&
-      barberId &&
-      data &&
-      startAt,
+        barberId &&
+        data &&
+        startAt,
     ) &&
     !semBarbeiroParaServico;
 
-  const params = new URLSearchParams();
+  const precisaDados =
+    !authenticated || !profileComplete;
 
-  if (serviceId) params.set("service", serviceId);
-  if (barberId) params.set("barber", barberId);
-  if (data) params.set("date", data);
-  if (startAt) params.set("start", startAt);
-
-  const queryString = params.toString();
-
-  const bookingPath = `/${slug}/reservar${
-    queryString ? `?${queryString}` : ""
-  }`;
-
-  const loginHref = `/${slug}/login?next=${encodeURIComponent(
-    bookingPath,
-  )}`;
-
-  const profileHref = `/${slug}/completar-cadastro?next=${encodeURIComponent(
-    bookingPath,
-  )}`;
+  const action = !authenticated
+    ? criarAgendamentoConvidado
+    : profileComplete
+      ? criarAgendamento
+      : criarAgendamentoComCadastro;
 
   return (
     <ActionForm
-      action={asFormAction(criarAgendamento)}
+      action={asFormAction(action)}
       className="grid gap-4"
     >
       <input
@@ -194,31 +219,35 @@ export function ReservaForm({
         value={slug}
       />
 
-      <div className="mb-1 grid grid-cols-4 gap-2">
-        {["Serviço", "Profissional", "Horário", "Confirmar"].map(
-          (item, index) => (
+      <div className="mb-1 grid grid-cols-5 gap-2">
+        {[
+          "Serviço",
+          "Profissional",
+          "Horário",
+          "Contato",
+          "Confirmar",
+        ].map((item, index) => (
+          <div key={item} className="min-w-0">
             <div
-              key={item}
-              className="min-w-0"
-            >
-              <div
-                className={[
-                  "h-1.5 rounded-full transition",
-                  index === 0 ||
-                  (index === 1 && serviceId) ||
-                  (index === 2 && barberId && data) ||
-                  (index === 3 && selectionReady)
-                    ? "bg-[var(--tenant-accent)]"
-                    : "bg-[var(--border)]",
-                ].join(" ")}
-              />
+              className={[
+                "h-1.5 rounded-full transition",
+                index === 0 ||
+                (index === 1 && serviceId) ||
+                (index === 2 && barberId && data) ||
+                (index === 3 && selectionReady) ||
+                (index === 4 &&
+                  selectionReady &&
+                  (!precisaDados || authenticated))
+                  ? "bg-[var(--tenant-accent)]"
+                  : "bg-[var(--border)]",
+              ].join(" ")}
+            />
 
-              <p className="mt-1 hidden truncate text-[10px] font-bold text-[var(--text-muted)] sm:block">
-                {item}
-              </p>
-            </div>
-          ),
-        )}
+            <p className="mt-1 hidden truncate text-[10px] font-bold text-[var(--text-muted)] sm:block">
+              {item}
+            </p>
+          </div>
+        ))}
       </div>
 
       <div className="ui-booking-step rounded-3xl border border-[var(--border)] bg-white p-4 shadow-[0_12px_35px_rgba(68,48,26,0.05)] sm:p-5">
@@ -242,8 +271,11 @@ export function ReservaForm({
               key={servico.id}
               value={servico.id}
             >
-              {servico.name} · {formatarMoeda(Number(servico.price))} ·{" "}
-              {servico.duration_minutes} min
+              {servico.name} ·{" "}
+              {formatarMoeda(
+                Number(servico.price),
+              )}{" "}
+              · {servico.duration_minutes} min
             </option>
           ))}
         </Select>
@@ -270,14 +302,16 @@ export function ReservaForm({
             }}
             required
           >
-            {barbeirosDoServico.map((barber) => (
-              <option
-                key={barber.id}
-                value={barber.id}
-              >
-                {barber.name}
-              </option>
-            ))}
+            {barbeirosDoServico.map(
+              (barber) => (
+                <option
+                  key={barber.id}
+                  value={barber.id}
+                >
+                  {barber.name}
+                </option>
+              ),
+            )}
           </Select>
         )}
       </div>
@@ -298,7 +332,9 @@ export function ReservaForm({
               setStartAt("");
             }}
             required
-            disabled={semBarbeiroParaServico}
+            disabled={
+              semBarbeiroParaServico
+            }
           />
 
           <SeletorHorario
@@ -311,6 +347,82 @@ export function ReservaForm({
           />
         </div>
       </div>
+
+      {precisaDados && (
+        <div className="ui-booking-step rounded-3xl border border-[var(--border)] bg-white p-4 shadow-[0_12px_35px_rgba(68,48,26,0.05)] sm:p-5">
+          <StepHeader
+            step="Etapa 4"
+            title={
+              authenticated
+                ? "Complete seus dados"
+                : "Como podemos identificar sua reserva?"
+            }
+            icon={Contact}
+          />
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <Label htmlFor="full_name">
+                Nome
+              </Label>
+
+              <Input
+                id="full_name"
+                name="full_name"
+                defaultValue={
+                  initialContact?.name ?? ""
+                }
+                autoComplete="name"
+                placeholder="Seu nome"
+                required
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="phone">
+                WhatsApp / telefone
+              </Label>
+
+              <Input
+                id="phone"
+                name="phone"
+                defaultValue={
+                  initialContact?.phone ?? ""
+                }
+                autoComplete="tel"
+                inputMode="tel"
+                placeholder="(83) 99999-9999"
+                required
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="email">
+                E-mail
+              </Label>
+
+              <Input
+                id="email"
+                name="email"
+                type="email"
+                defaultValue={
+                  initialContact?.email ?? ""
+                }
+                autoComplete="email"
+                placeholder="Opcional"
+              />
+            </div>
+          </div>
+
+          {!authenticated && (
+            <p className="mt-4 flex items-start gap-2 text-sm leading-6 text-[var(--text-muted)]">
+              <ShieldCheck className="mt-1 h-4 w-4 shrink-0 text-[var(--tenant-accent)]" />
+              Você não precisa criar conta para reservar. O telefone identifica
+              sua reserva e o e-mail é opcional.
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="ui-booking-step rounded-3xl border border-[var(--border)] bg-white p-4 shadow-[0_12px_35px_rgba(68,48,26,0.05)] sm:p-5">
         <StepHeader
@@ -326,75 +438,35 @@ export function ReservaForm({
         />
       </div>
 
-      {!authenticated && (
-        <div className="rounded-3xl border border-[var(--border)] bg-[#252623] p-5 text-white shadow-[0_18px_48px_rgba(0,0,0,0.12)]">
-          <div className="flex items-start gap-3">
-            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/10 text-[var(--tenant-accent)]">
-              <LockKeyhole className="h-5 w-5" />
-            </span>
+      <div className="rounded-3xl border border-[var(--border)] bg-[#252623] p-5 text-white shadow-[0_18px_48px_rgba(0,0,0,0.12)]">
+        <div className="flex items-start gap-3">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/10 text-[var(--tenant-accent)]">
+            <CheckCircle2 className="h-5 w-5" />
+          </span>
 
-            <div>
-              <p className="font-extrabold">
-                Entre somente para confirmar
-              </p>
-              <p className="mt-1 text-sm leading-6 text-white/65">
-                Sua escolha fica preservada. O login é necessário apenas antes
-                de concluir a reserva.
-              </p>
-            </div>
+          <div>
+            <p className="font-extrabold">
+              {authenticated
+                ? "Tudo pronto para confirmar"
+                : "Reserve sem criar conta"}
+            </p>
+
+            <p className="mt-1 text-sm leading-6 text-white/65">
+              {authenticated
+                ? profileComplete
+                  ? "Revise suas escolhas e confirme o horário."
+                  : "Seus dados serão salvos na sua conta junto com a reserva."
+                : "Após confirmar, exibiremos um código da reserva. Guarde esse código junto com o telefone informado."}
+            </p>
           </div>
-
-          <ButtonLink
-            href={loginHref}
-            className={[
-              "mt-5 w-full",
-              !selectionReady
-                ? "pointer-events-none opacity-50"
-                : "",
-            ].join(" ")}
-          >
-            <Check className="h-4 w-4" />
-            Entrar para confirmar
-          </ButtonLink>
         </div>
-      )}
 
-      {authenticated && !profileComplete && (
-        <div className="rounded-3xl border border-[var(--border)] bg-[#252623] p-5 text-white">
-          <p className="font-extrabold">
-            Falta só completar seus dados
-          </p>
-
-          <p className="mt-1 text-sm leading-6 text-white/65">
-            Vamos usar nome e telefone apenas para identificar e acompanhar sua
-            reserva.
-          </p>
-
-          <ButtonLink
-            href={profileHref}
-            className={[
-              "mt-5 w-full",
-              !selectionReady
-                ? "pointer-events-none opacity-50"
-                : "",
-            ].join(" ")}
-          >
-            Completar cadastro
-          </ButtonLink>
-        </div>
-      )}
-
-      {authenticated && profileComplete && (
-        <>
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
-            Tudo pronto. Revise suas escolhas e confirme a reserva.
-          </div>
-
+        <div className="mt-5">
           <BotaoConfirmar
             disabled={!selectionReady}
           />
-        </>
-      )}
+        </div>
+      </div>
     </ActionForm>
   );
 }

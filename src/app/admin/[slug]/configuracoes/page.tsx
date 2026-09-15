@@ -6,7 +6,12 @@ import {
   CardDescription,
   CardTitle,
 } from "@/components/ui/Card";
-import { Input, Label, Textarea } from "@/components/ui/Input";
+import {
+  Input,
+  Label,
+  Select,
+  Textarea,
+} from "@/components/ui/Input";
 import { requireBarbershopManager } from "@/features/tenancy/server";
 import {
   updateBusinessSettings as updateBusinessSettingsResult,
@@ -60,7 +65,8 @@ export default async function SettingsPage({
       <Card>
         <CardTitle>Dados e identidade</CardTitle>
         <CardDescription>
-          Nome, imagens e cor são exclusivos desta barbearia.
+          Nome, imagens, cor e comportamento da agenda são exclusivos desta
+          barbearia.
         </CardDescription>
 
         <ActionForm
@@ -160,6 +166,24 @@ export default async function SettingsPage({
               max="365"
               defaultValue={settings?.booking_advance_days ?? 30}
             />
+          </div>
+
+          <div className="md:col-span-2">
+            <Label>Intervalo entre opções de horário</Label>
+            <Select
+              name="slot_interval_minutes"
+              defaultValue={String(settings?.slot_interval_minutes ?? 30)}
+              required
+            >
+              <option value="15">A cada 15 minutos</option>
+              <option value="30">A cada 30 minutos</option>
+              <option value="45">A cada 45 minutos</option>
+              <option value="60">A cada 60 minutos</option>
+            </Select>
+            <p className="mt-2 text-xs leading-5 text-zinc-400">
+              Isso controla os horários possíveis de início. A duração real de
+              cada serviço continua sendo respeitada para impedir conflitos.
+            </p>
           </div>
 
           <div>

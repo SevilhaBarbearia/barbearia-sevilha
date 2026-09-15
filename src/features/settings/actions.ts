@@ -19,6 +19,13 @@ const settingsSchema = z.object({
   cover_url: z.union([z.literal(""), z.string().url()]),
   cancellation_limit_hours: z.coerce.number().int().min(0).max(168),
   booking_advance_days: z.coerce.number().int().min(1).max(365),
+  slot_interval_minutes: z.coerce
+    .number()
+    .int()
+    .refine(
+      (value) => [15, 30, 45, 60].includes(value),
+      "Escolha um intervalo válido para a agenda.",
+    ),
 });
 
 export async function updateBusinessSettings(formData: FormData) {
@@ -39,7 +46,6 @@ export async function updateBusinessSettings(formData: FormData) {
   const supabase = await createClient();
   const { primary_color, ...businessData } = parsed.data;
 
-  // Eu calculo o foreground apenas quando a cor do tenant é salva.
   const secondary_color = calcularForegroundSeguro(primary_color);
 
   const data = {

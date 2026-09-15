@@ -1,15 +1,13 @@
 import {
   CalendarCheck,
   CheckCircle2,
-  LockKeyhole,
+  ShieldCheck,
 } from "lucide-react";
 
 import { ReservaForm } from "@/components/forms/ReservaForm";
 import { NavPublica } from "@/components/layout/NavPublica";
 import { Badge } from "@/components/ui/Badge";
-import {
-  requireBarbershop,
-} from "@/features/tenancy/server";
+import { requireBarbershop } from "@/features/tenancy/server";
 import { obterUsuarioAtual } from "@/lib/auth/permissoes";
 import { createClient } from "@/lib/supabase/server";
 
@@ -18,7 +16,9 @@ export const dynamic = "force-dynamic";
 function firstParam(
   value: string | string[] | undefined,
 ) {
-  return Array.isArray(value) ? value[0] : value;
+  return Array.isArray(value)
+    ? value[0]
+    : value;
 }
 
 export default async function ReservarPage({
@@ -119,23 +119,23 @@ export default async function ReservarPage({
               </h1>
 
               <p className="ui-body mt-3 max-w-2xl text-[var(--text-muted)]">
-                Monte sua reserva no seu ritmo. Você só precisa entrar na conta
-                na hora de confirmar.
+                Escolha serviço, profissional, data e horário. Não é necessário
+                ter conta Google para fazer uma reserva.
               </p>
             </div>
 
             <div className="hidden rounded-3xl border border-[var(--border)] bg-white/90 p-5 shadow-[0_14px_38px_rgba(68,48,26,0.07)] lg:block">
               <div className="flex items-start gap-3">
-                <LockKeyhole className="mt-0.5 h-5 w-5 shrink-0 text-[var(--tenant-accent)]" />
+                <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[var(--tenant-accent)]" />
 
                 <div>
                   <p className="font-extrabold text-[var(--text)]">
-                    Sem pressa para entrar
+                    Reserva simples
                   </p>
 
                   <p className="mt-1 text-sm leading-6 text-[var(--text-muted)]">
-                    Serviço, profissional, data e horário podem ser escolhidos
-                    antes do login.
+                    Para reservar sem conta, basta informar nome e telefone.
+                    O e-mail é opcional.
                   </p>
                 </div>
               </div>
@@ -143,12 +143,12 @@ export default async function ReservarPage({
               <div className="mt-4 grid gap-2 text-sm text-[var(--text-muted)]">
                 <span className="flex items-center gap-2">
                   <CheckCircle2 className="h-4 w-4 text-[var(--tenant-accent)]" />
-                  Escolhas preservadas
+                  Sem login obrigatório
                 </span>
 
                 <span className="flex items-center gap-2">
                   <CheckCircle2 className="h-4 w-4 text-[var(--tenant-accent)]" />
-                  Confirmação protegida
+                  Conflitos continuam protegidos
                 </span>
               </div>
             </div>
@@ -161,23 +161,26 @@ export default async function ReservarPage({
               barbers={barbers ?? []}
               authenticated={Boolean(user)}
               profileComplete={profileComplete}
+              initialContact={{
+                name:
+                  profile?.full_name ??
+                  user?.user_metadata?.name ??
+                  "",
+                phone: profile?.phone ?? "",
+                email:
+                  profile?.email ??
+                  user?.email ??
+                  "",
+              }}
               initialSelection={{
                 serviceId:
-                  firstParam(
-                    query.service,
-                  ),
+                  firstParam(query.service),
                 barberId:
-                  firstParam(
-                    query.barber,
-                  ),
+                  firstParam(query.barber),
                 date:
-                  firstParam(
-                    query.date,
-                  ),
+                  firstParam(query.date),
                 startAt:
-                  firstParam(
-                    query.start,
-                  ),
+                  firstParam(query.start),
               }}
             />
           </div>

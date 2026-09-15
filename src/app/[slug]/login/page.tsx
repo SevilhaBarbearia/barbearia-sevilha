@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 
 import { Logo } from "@/components/brand/Logo";
 import { LoginGoogleButton } from "@/components/forms/LoginGoogleButton";
+import { ButtonLink } from "@/components/ui/Button";
 import {
   Card,
   CardDescription,
@@ -13,6 +14,7 @@ import {
 } from "@/components/ui/Card";
 import { requireBarbershop } from "@/features/tenancy/server";
 import { obterUsuarioAtual } from "@/lib/auth/permissoes";
+import { isGoogleAuthEnabled } from "@/lib/auth/provider-settings";
 import { createClient } from "@/lib/supabase/server";
 
 function safeInternalPath(
@@ -91,8 +93,11 @@ export default async function LoginPage({
   const supabase =
     await createClient();
 
-  const { data: settings } =
-    await supabase
+  const [
+    { data: settings },
+    googleEnabled,
+  ] = await Promise.all([
+    supabase
       .from("business_settings")
       .select(
         "business_name,logo_url",
@@ -101,7 +106,9 @@ export default async function LoginPage({
         "barbershop_id",
         barbershop.id,
       )
-      .maybeSingle();
+      .maybeSingle(),
+    isGoogleAuthEnabled(),
+  ]);
 
   const brandName =
     settings?.business_name ||
@@ -129,28 +136,43 @@ export default async function LoginPage({
           </div>
 
           <CardTitle>
-            Entre para confirmar
+            Minha conta
           </CardTitle>
 
           <CardDescription>
-            Suas escolhas de serviço, profissional e horário continuam
-            preservadas após o login.
+            Entrar é opcional para reservar. A conta serve para acompanhar
+            horários, histórico e fidelidade.
           </CardDescription>
 
           <div className="mt-5 rounded-2xl border border-[var(--border)] bg-[#FAF8F4] p-4 text-sm leading-6 text-[var(--text-muted)]">
             <span className="flex items-start gap-2">
               <ShieldCheck className="mt-1 h-4 w-4 shrink-0 text-[var(--tenant-accent)]" />
-              Usamos sua conta apenas para identificar a reserva e permitir que
-              você acompanhe seus horários.
+              Você pode voltar para a reserva agora e confirmar apenas com nome
+              e telefone.
             </span>
           </div>
 
-          <div className="mt-6">
-            <LoginGoogleButton
-              slug={barbershop.slug}
-              next={requestedNext}
-            />
-          </div>
+          {googleEnabled ? (
+            <div className="mt-6">
+              <LoginGoogleButton
+                slug={barbershop.slug}
+                next={requestedNext}
+              />
+            </div>
+          ) : (
+            <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+              O acesso com Google não está habilitado neste ambiente. Isso não
+              impede uma reserva sem conta.
+            </div>
+          )}
+
+          <ButtonLink
+            href={`/${barbershop.slug}/reservar`}
+            variant="secondary"
+            className="mt-4 w-full"
+          >
+            Reservar sem conta
+          </ButtonLink>
         </Card>
       </div>
     </main>
