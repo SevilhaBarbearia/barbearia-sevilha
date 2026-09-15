@@ -14,10 +14,14 @@ import { Scissors } from "lucide-react";
 
 import styles from "./AppRouteLoader.module.css";
 
-function isSamePageOnlyHash(target: URL) {
+function isSamePageOnlyHash(
+  target: URL,
+) {
   return (
-    target.pathname === window.location.pathname &&
-    target.search === window.location.search
+    target.pathname ===
+      window.location.pathname &&
+    target.search ===
+      window.location.search
   );
 }
 
@@ -33,17 +37,23 @@ function isInternalAnchorClick(
     event.shiftKey ||
     event.altKey ||
     anchor.target === "_blank" ||
-    anchor.hasAttribute("download")
+    anchor.hasAttribute(
+      "download",
+    )
   ) {
     return false;
   }
 
   const rawHref =
-    anchor.getAttribute("href");
+    anchor.getAttribute(
+      "href",
+    );
 
   if (
     !rawHref ||
-    rawHref.startsWith("mailto:") ||
+    rawHref.startsWith(
+      "mailto:",
+    ) ||
     rawHref.startsWith("tel:")
   ) {
     return false;
@@ -62,11 +72,12 @@ function isInternalAnchorClick(
       return false;
     }
 
-    if (rawHref.startsWith("#")) {
-      return false;
-    }
-
-    if (isSamePageOnlyHash(target)) {
+    if (
+      rawHref.startsWith("#") ||
+      isSamePageOnlyHash(
+        target,
+      )
+    ) {
       return false;
     }
 
@@ -76,37 +87,39 @@ function isInternalAnchorClick(
   }
 }
 
-function isInternalFormSubmit(
-  form: HTMLFormElement,
+function readableLinkLabel(
+  anchor: HTMLAnchorElement,
 ) {
-  if (
-    form.target === "_blank" ||
-    form.hasAttribute("download")
-  ) {
-    return false;
+  const raw =
+    anchor.getAttribute(
+      "data-loading-label",
+    ) ||
+    anchor.getAttribute(
+      "aria-label",
+    ) ||
+    anchor.textContent ||
+    "";
+
+  const normalized = raw
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!normalized) {
+    return null;
   }
 
-  const action =
-    form.getAttribute("action") ||
-    window.location.href;
-
-  try {
-    const target = new URL(
-      action,
-      window.location.href,
-    );
-
-    return (
-      target.origin ===
-      window.location.origin
-    );
-  } catch {
-    return false;
-  }
+  return normalized.length > 42
+    ? `${normalized.slice(
+        0,
+        42,
+      )}…`
+    : normalized;
 }
 
 export function AppRouteLoader() {
-  const pathname = usePathname();
+  const pathname =
+    usePathname();
+
   const searchParams =
     useSearchParams();
 
@@ -124,28 +137,22 @@ export function AppRouteLoader() {
       "Preparando a próxima tela...",
     );
 
-  const hideTimer =
-    useRef<ReturnType<
-      typeof setTimeout
-    > | null>(null);
-
   const safetyTimer =
     useRef<ReturnType<
       typeof setTimeout
     > | null>(null);
 
-  function clearTimers() {
-    if (hideTimer.current) {
-      clearTimeout(
-        hideTimer.current,
-      );
-      hideTimer.current = null;
-    }
+  const mounted =
+    useRef(false);
 
-    if (safetyTimer.current) {
+  function clearSafetyTimer() {
+    if (
+      safetyTimer.current
+    ) {
       clearTimeout(
         safetyTimer.current,
       );
+
       safetyTimer.current =
         null;
     }
@@ -154,7 +161,7 @@ export function AppRouteLoader() {
   function startLoading(
     customMessage?: string,
   ) {
-    clearTimers();
+    clearSafetyTimer();
 
     setMessage(
       customMessage?.trim() ||
@@ -166,30 +173,32 @@ export function AppRouteLoader() {
     safetyTimer.current =
       setTimeout(() => {
         setVisible(false);
-      }, 10000);
+      }, 8000);
   }
 
+  /*
+   * Só encerramos o overlay quando a rota realmente mudou.
+   * Antes ele também reagia ao próprio setVisible(true), o que podia
+   * esconder o loading depois de poucos milissegundos.
+   */
   useEffect(() => {
-    if (!visible) {
+    if (!mounted.current) {
+      mounted.current = true;
       return;
     }
 
-    hideTimer.current = setTimeout(
+    clearSafetyTimer();
+
+    const timer = setTimeout(
       () => {
         setVisible(false);
       },
-      220,
+      260,
     );
 
-    return () => {
-      if (hideTimer.current) {
-        clearTimeout(
-          hideTimer.current,
-        );
-        hideTimer.current = null;
-      }
-    };
-  }, [routeKey, visible]);
+    return () =>
+      clearTimeout(timer);
+  }, [routeKey]);
 
   useEffect(() => {
     function onClick(
@@ -199,7 +208,10 @@ export function AppRouteLoader() {
         event.target;
 
       if (
-        !(target instanceof Element)
+        !(
+          target instanceof
+          Element
+        )
       ) {
         return;
       }
@@ -208,8 +220,10 @@ export function AppRouteLoader() {
         target.closest("a");
 
       if (
-        !(anchor instanceof
-          HTMLAnchorElement) ||
+        !(
+          anchor instanceof
+          HTMLAnchorElement
+        ) ||
         !isInternalAnchorClick(
           event,
           anchor,
@@ -219,48 +233,37 @@ export function AppRouteLoader() {
       }
 
       const label =
-        anchor.getAttribute(
-          "data-loading-label",
-        ) || anchor.textContent;
+        readableLinkLabel(
+          anchor,
+        );
 
       startLoading(
         label
-          ? `Abrindo ${label.trim()}...`
+          ? `Abrindo ${label}...`
           : undefined,
       );
     }
 
-    function onSubmit(
-      event: Event,
-    ) {
-      const target =
-        event.target;
-
-      if (
-        !(target instanceof
-          HTMLFormElement) ||
-        !isInternalFormSubmit(
-          target,
-        )
-      ) {
-        return;
-      }
-
+    function onPopState() {
       startLoading(
-        "Processando sua ação...",
+        "Atualizando a navegação...",
       );
     }
 
+    /*
+     * Form actions não entram no overlay global.
+     * Muitas delas retornam validações sem trocar de rota; nesses casos
+     * o próprio formulário mostra o estado de processamento.
+     */
     document.addEventListener(
       "click",
       onClick,
       true,
     );
 
-    document.addEventListener(
-      "submit",
-      onSubmit,
-      true,
+    window.addEventListener(
+      "popstate",
+      onPopState,
     );
 
     return () => {
@@ -270,13 +273,12 @@ export function AppRouteLoader() {
         true,
       );
 
-      document.removeEventListener(
-        "submit",
-        onSubmit,
-        true,
+      window.removeEventListener(
+        "popstate",
+        onPopState,
       );
 
-      clearTimers();
+      clearSafetyTimer();
     };
   }, []);
 
@@ -294,20 +296,28 @@ export function AppRouteLoader() {
       aria-label="Carregando próxima tela"
     >
       <div
-        className={styles.topBar}
+        className={
+          styles.topBar
+        }
       />
 
       <div
-        className={styles.card}
+        className={
+          styles.card
+        }
       >
         <div
-          className={styles.badge}
+          className={
+            styles.badge
+          }
         >
           Agendamento online
         </div>
 
         <div
-          className={styles.center}
+          className={
+            styles.center
+          }
         >
           <div
             className={
@@ -324,29 +334,41 @@ export function AppRouteLoader() {
           </div>
 
           <h2
-            className={styles.title}
+            className={
+              styles.title
+            }
           >
             Carregando
           </h2>
 
           <p
-            className={styles.text}
+            className={
+              styles.text
+            }
           >
             {message}
           </p>
 
           <div
-            className={styles.bars}
+            className={
+              styles.bars
+            }
             aria-hidden="true"
           >
             <span
-              className={styles.bar}
+              className={
+                styles.bar
+              }
             />
             <span
-              className={styles.bar}
+              className={
+                styles.bar
+              }
             />
             <span
-              className={styles.bar}
+              className={
+                styles.bar
+              }
             />
           </div>
 
@@ -355,7 +377,8 @@ export function AppRouteLoader() {
               styles.helper
             }
           >
-            Aguarde só um instante.
+            Aguarde só um
+            instante.
           </p>
         </div>
       </div>

@@ -5,6 +5,9 @@ import {
   type ComponentProps,
   type ReactNode,
 } from "react";
+import {
+  Scissors,
+} from "lucide-react";
 
 type State = {
   ok: boolean;
@@ -72,6 +75,7 @@ export function ActionForm({
     <form
       {...props}
       action={submit}
+      aria-busy={pending}
     >
       <fieldset
         disabled={pending}
@@ -83,9 +87,16 @@ export function ActionForm({
       {pending && (
         <p
           role="status"
+          aria-live="polite"
           className="mt-3 flex items-center gap-2 text-sm font-semibold text-[var(--text-muted)]"
         >
-          <span className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--tenant-accent)] border-r-transparent" />
+          <span className="grid h-7 w-7 place-items-center rounded-full border border-[var(--border)] bg-[var(--surface)] shadow-sm">
+            <Scissors
+              aria-hidden="true"
+              className="h-3.5 w-3.5 animate-spin text-[var(--tenant-accent)] motion-reduce:animate-none"
+            />
+          </span>
+
           Processando...
         </p>
       )}
@@ -93,6 +104,7 @@ export function ActionForm({
       {state.mensagem && (
         <p
           role="status"
+          aria-live="polite"
           className={[
             "mt-3 rounded-2xl border px-4 py-3 text-sm font-semibold",
             state.ok

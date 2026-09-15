@@ -2,9 +2,14 @@ import Link from "next/link";
 
 import { cn } from "@/lib/utils";
 
-type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: "primary" | "secondary" | "ghost" | "danger";
-};
+type ButtonProps =
+  React.ButtonHTMLAttributes<HTMLButtonElement> & {
+    variant?:
+      | "primary"
+      | "secondary"
+      | "ghost"
+      | "danger";
+  };
 
 const variants = {
   primary:
@@ -18,7 +23,7 @@ const variants = {
 };
 
 const base =
-  "inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-extrabold tracking-tight transition duration-200 focus-visible:outline-none focus-visible:ring-4 disabled:cursor-not-allowed disabled:opacity-60";
+  "inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-extrabold tracking-tight transition duration-200 will-change-transform focus-visible:outline-none focus-visible:ring-4 active:translate-y-0 active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100 motion-reduce:transform-none motion-reduce:transition-none";
 
 export function Button({
   className,
@@ -27,7 +32,11 @@ export function Button({
 }: ButtonProps) {
   return (
     <button
-      className={cn(base, variants[variant], className)}
+      className={cn(
+        base,
+        variants[variant],
+        className,
+      )}
       {...props}
     />
   );
@@ -41,13 +50,18 @@ export function ButtonLink({
 }: {
   href: string;
   className?: string;
-  variant?: keyof typeof variants;
+  variant?:
+    keyof typeof variants;
   children: React.ReactNode;
 }) {
   return (
     <Link
       href={href}
-      className={cn(base, variants[variant], className)}
+      className={cn(
+        base,
+        variants[variant],
+        className,
+      )}
     >
       {children}
     </Link>

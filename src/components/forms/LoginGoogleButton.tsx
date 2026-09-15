@@ -6,6 +6,7 @@ import {
 
 import {
   LogIn,
+  Scissors,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
@@ -103,12 +104,20 @@ export function LoginGoogleButton({
   return (
     <Button
       type="button"
-      onClick={entrarComGoogle}
+      onClick={
+        entrarComGoogle
+      }
       disabled={loading}
+      aria-busy={loading}
       className="w-full"
     >
       {loading ? (
-        <span className="h-5 w-5 animate-spin rounded-full border-2 border-current border-r-transparent" />
+        <span className="grid h-7 w-7 place-items-center rounded-full bg-white/90 text-zinc-950 shadow-sm">
+          <Scissors
+            aria-hidden="true"
+            className="h-4 w-4 animate-spin motion-reduce:animate-none"
+          />
+        </span>
       ) : (
         <span className="grid h-7 w-7 place-items-center rounded-full bg-white font-black text-zinc-950 shadow-sm">
           G
