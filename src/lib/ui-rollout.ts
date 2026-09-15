@@ -1,6 +1,8 @@
 import { get } from "@vercel/global-config";
 
-export type TenantUiVersion = "legacy" | "warm-premium";
+export type TenantUiVersion =
+  | "legacy"
+  | "warm-premium";
 
 type RolloutEnvironment =
   | "development"
@@ -8,50 +10,185 @@ type RolloutEnvironment =
   | "production";
 
 type RolloutConfig = Partial<
-  Record<RolloutEnvironment, unknown>
+  Record<
+    RolloutEnvironment,
+    unknown
+  >
 >;
 
-const ROLLOUT_CONFIG_KEY = "warmPremiumUiTenants";
+const ROLLOUT_CONFIG_KEY =
+  "warmPremiumUiTenants";
 
-function normalizeTenantList(value: unknown): string[] {
+function normalizeTenantList(
+  value: unknown,
+): string[] {
   if (!Array.isArray(value)) {
     return [];
   }
 
   return value
     .filter(
-      (item): item is string =>
-        typeof item === "string",
+      (
+        item,
+      ): item is string =>
+        typeof item ===
+        "string",
     )
-    .map((item) => item.trim().toLowerCase())
+    .map((item) =>
+      item
+        .trim()
+        .toLowerCase(),
+    )
     .filter(Boolean);
 }
 
-function getRolloutEnvironment(): RolloutEnvironment {
-  if (process.env.VERCEL_ENV === "production") {
-    return "production";
+function normalizeEnvironment(
+  value:
+    | string
+    | undefined,
+): RolloutEnvironment | null {
+  const normalized =
+    value
+      ?.trim()
+      .toLowerCase();
+
+  if (
+    normalized ===
+      "production" ||
+    normalized ===
+      "preview" ||
+    normalized ===
+      "development"
+  ) {
+    return normalized;
   }
 
-  if (process.env.VERCEL_ENV === "preview") {
+  return null;
+}
+
+function getRolloutEnvironment(): RolloutEnvironment | null {
+  /*
+   * Eu uso mais de uma fonte porque a Vercel
+   * pode expor o ambiente pelo target padrão
+   * ou pelas variáveis do framework.
+   */
+  const candidates = [
+    process.env
+      .VERCEL_TARGET_ENV,
+
+    process.env
+      .VERCEL_ENV,
+
+    process.env
+      .NEXT_PUBLIC_VERCEL_TARGET_ENV,
+
+    process.env
+      .NEXT_PUBLIC_VERCEL_ENV,
+  ];
+
+  for (
+    const candidate
+    of candidates
+  ) {
+    const environment =
+      normalizeEnvironment(
+        candidate,
+      );
+
+    if (environment) {
+      return environment;
+    }
+  }
+
+  /*
+   * A URL específica de branch existe apenas
+   * nos deployments de Preview.
+   */
+  const branchUrl =
+    process.env
+      .VERCEL_BRANCH_URL ??
+    process.env
+      .NEXT_PUBLIC_VERCEL_BRANCH_URL;
+
+  if (branchUrl) {
     return "preview";
   }
 
-  return "development";
+  /*
+   * Se tenho URL do deployment e URL oficial
+   * de produção, consigo diferenciar produção
+   * de Preview sem depender só do VERCEL_ENV.
+   */
+  const deploymentUrl =
+    process.env.VERCEL_URL ??
+    process.env
+      .NEXT_PUBLIC_VERCEL_URL;
+
+  const productionUrl =
+    process.env
+      .VERCEL_PROJECT_PRODUCTION_URL ??
+    process.env
+      .NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL;
+
+  if (
+    deploymentUrl &&
+    productionUrl
+  ) {
+    return deploymentUrl ===
+      productionUrl
+      ? "production"
+      : "preview";
+  }
+
+  /*
+   * Fora da Vercel eu considero desenvolvimento.
+   *
+   * Em um runtime de produção desconhecido eu
+   * NÃO assumo Preview: prefiro falhar fechado.
+   */
+  if (
+    process.env.NODE_ENV !==
+    "production"
+  ) {
+    return "development";
+  }
+
+  return null;
 }
 
 function getTenantsForEnvironment(
   value: unknown,
 ): string[] {
   if (Array.isArray(value)) {
-    return normalizeTenantList(value);
+    return normalizeTenantList(
+      value,
+    );
   }
 
-  if (!value || typeof value !== "object") {
+  if (
+    !value ||
+    typeof value !==
+      "object"
+  ) {
     return [];
   }
 
-  const environment = getRolloutEnvironment();
-  const config = value as RolloutConfig;
+  const environment =
+    getRolloutEnvironment();
+
+  /*
+   * Eu não tento adivinhar o ambiente quando
+   * estou em runtime de produção.
+   *
+   * Isso impede que um erro de configuração
+   * habilite a UI nova acidentalmente.
+   */
+  if (!environment) {
+    return [];
+  }
+
+  const config =
+    value as RolloutConfig;
 
   return normalizeTenantList(
     config[environment],
@@ -61,29 +198,43 @@ function getTenantsForEnvironment(
 function getLocalOverride(): string[] {
   if (
     process.env.VERCEL_ENV ||
-    process.env.NODE_ENV === "production"
+    process.env
+      .VERCEL_TARGET_ENV ||
+    process.env.NODE_ENV ===
+      "production"
   ) {
     return [];
   }
 
   return normalizeTenantList(
-    process.env.UI_ROLLOUT_LOCAL_TENANTS?.split(",") ?? [],
+    process.env
+      .UI_ROLLOUT_LOCAL_TENANTS?.split(
+        ",",
+      ) ?? [],
   );
 }
 
-async function readRolloutTenantsFromGlobalConfig(): Promise<string[]> {
+async function readRolloutTenantsFromGlobalConfig(): Promise<
+  string[]
+> {
   try {
     /*
-     * Eu deixo o SDK oficial resolver a conexão com o Global Config.
-     * Não verifico process.env.GLOBAL_CONFIG antes da leitura porque essa
-     * variável é detalhe da integração da Vercel e pode não estar exposta
-     * da mesma forma em todos os runtimes/deployments.
+     * O SDK oficial resolve a conexão com
+     * o Global Config da Vercel.
      */
-    const value = await get(ROLLOUT_CONFIG_KEY);
+    const value =
+      await get(
+        ROLLOUT_CONFIG_KEY,
+      );
 
-    return getTenantsForEnvironment(value);
+    return getTenantsForEnvironment(
+      value,
+    );
   } catch {
-    // Eu falho fechado: qualquer problema mantém a interface legada.
+    /*
+     * Eu falho fechado.
+     * Nenhuma falha externa ativa a UI nova.
+     */
     return [];
   }
 }
@@ -91,15 +242,21 @@ async function readRolloutTenantsFromGlobalConfig(): Promise<string[]> {
 export async function getTenantUiVersion(
   slug: string,
 ): Promise<TenantUiVersion> {
-  const normalizedSlug = slug
-    .trim()
-    .toLowerCase();
+  const normalizedSlug =
+    slug
+      .trim()
+      .toLowerCase();
 
-  const localOverride = getLocalOverride();
+  const localOverride =
+    getLocalOverride();
 
   if (
-    localOverride.includes("*") ||
-    localOverride.includes(normalizedSlug)
+    localOverride.includes(
+      "*",
+    ) ||
+    localOverride.includes(
+      normalizedSlug,
+    )
   ) {
     return "warm-premium";
   }
@@ -108,8 +265,12 @@ export async function getTenantUiVersion(
     await readRolloutTenantsFromGlobalConfig();
 
   const enabled =
-    enabledTenants.includes("*") ||
-    enabledTenants.includes(normalizedSlug);
+    enabledTenants.includes(
+      "*",
+    ) ||
+    enabledTenants.includes(
+      normalizedSlug,
+    );
 
   return enabled
     ? "warm-premium"
