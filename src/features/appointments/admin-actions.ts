@@ -25,6 +25,10 @@ const completionSchema = z.object({
   ]),
 });
 
+const appointmentStatusSchema = z.object({
+  appointment_id: z.string().uuid("Reserva inválida."),
+});
+
 function completionErrorMessage(message?: string) {
   if (message?.includes("APPOINTMENT_NOT_FOUND")) {
     return "Reserva não encontrada nesta barbearia.";
@@ -45,6 +49,31 @@ function completionErrorMessage(message?: string) {
   return "Não foi possível concluir o atendimento e registrar o pagamento.";
 }
 
+function statusErrorMessage(
+  message: string | undefined,
+  action: "cancel" | "no-show",
+) {
+  if (message?.includes("APPOINTMENT_NOT_FOUND")) {
+    return "Reserva não encontrada nesta barbearia.";
+  }
+
+  if (message?.includes("INVALID_STATUS")) {
+    return "Essa reserva já foi finalizada e não pode ter o status alterado.";
+  }
+
+  if (message?.includes("APPOINTMENT_NOT_STARTED")) {
+    return "O no-show só pode ser registrado depois do início do horário agendado.";
+  }
+
+  if (message?.includes("FORBIDDEN")) {
+    return "Sua conta não possui permissão para alterar esta reserva.";
+  }
+
+  return action === "no-show"
+    ? "Não foi possível registrar o não comparecimento."
+    : "Não foi possível cancelar a reserva.";
+}
+
 function refreshAdminData(
   barbershopId: string,
   slug: string,
@@ -56,6 +85,9 @@ function refreshAdminData(
   );
 
   revalidatePath(`/${slug}`);
+  revalidatePath(`/${slug}/reservar`);
+  revalidatePath(`/${slug}/cliente/agendamentos`);
+  revalidatePath(`/${slug}/cliente/historico`);
   revalidatePath(`/admin/${slug}`);
   revalidatePath(`/admin/${slug}/agenda`);
   revalidatePath(`/admin/${slug}/reservas`);
@@ -150,5 +182,141 @@ export async function completeAppointmentWithPayment(
     ok: true,
     mensagem:
       "Atendimento concluído e pagamento registrado.",
+  };
+}
+
+export async function cancelAppointmentByManager(
+  formData: FormData,
+) {
+  const { barbershop } =
+    await requireBarbershopManager(
+      String(
+        formData.get("slug") ??
+          "",
+      ),
+    );
+
+  const parsed =
+    appointmentStatusSchema.safeParse({
+      appointment_id:
+        formData.get(
+          "appointment_id",
+        ),
+    });
+
+  if (!parsed.success) {
+    return {
+      ok: false,
+      mensagem:
+        parsed.error.issues[0]
+          ?.message ??
+        "Reserva inválida.",
+    };
+  }
+
+  const supabase =
+    await createClient();
+
+  const { error } =
+    await supabase.rpc(
+      "cancel_appointment_by_manager",
+      {
+        target_barbershop_id:
+          barbershop.id,
+        target_appointment_id:
+          parsed.data
+            .appointment_id,
+        reason:
+          "Cancelado pela barbearia.",
+      },
+    );
+
+  if (error) {
+    return {
+      ok: false,
+      mensagem:
+        statusErrorMessage(
+          error.message,
+          "cancel",
+        ),
+    };
+  }
+
+  refreshAdminData(
+    barbershop.id,
+    barbershop.slug,
+  );
+
+  return {
+    ok: true,
+    mensagem:
+      "Reserva cancelada.",
+  };
+}
+
+export async function markAppointmentNoShow(
+  formData: FormData,
+) {
+  const { barbershop } =
+    await requireBarbershopManager(
+      String(
+        formData.get("slug") ??
+          "",
+      ),
+    );
+
+  const parsed =
+    appointmentStatusSchema.safeParse({
+      appointment_id:
+        formData.get(
+          "appointment_id",
+        ),
+    });
+
+  if (!parsed.success) {
+    return {
+      ok: false,
+      mensagem:
+        parsed.error.issues[0]
+          ?.message ??
+        "Reserva inválida.",
+    };
+  }
+
+  const supabase =
+    await createClient();
+
+  const { error } =
+    await supabase.rpc(
+      "mark_appointment_no_show",
+      {
+        target_barbershop_id:
+          barbershop.id,
+        target_appointment_id:
+          parsed.data
+            .appointment_id,
+      },
+    );
+
+  if (error) {
+    return {
+      ok: false,
+      mensagem:
+        statusErrorMessage(
+          error.message,
+          "no-show",
+        ),
+    };
+  }
+
+  refreshAdminData(
+    barbershop.id,
+    barbershop.slug,
+  );
+
+  return {
+    ok: true,
+    mensagem:
+      "No-show registrado com sucesso.",
   };
 }

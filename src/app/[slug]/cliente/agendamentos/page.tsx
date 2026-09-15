@@ -3,6 +3,7 @@ import {
   CalendarCheck,
   CheckCircle2,
   Clock3,
+  UserX,
 } from "lucide-react";
 
 import { ActionForm } from "@/components/forms/ActionForm";
@@ -29,7 +30,7 @@ const STATUS_LABELS: Record<string, string> = {
   confirmed: "Confirmado",
   completed: "Concluído",
   canceled: "Cancelado",
-  no_show: "Não compareceu",
+  no_show: "Cancelado · No-show",
 };
 
 /*
@@ -57,6 +58,25 @@ function firstParam(
   return Array.isArray(value)
     ? value[0]
     : value;
+}
+
+function appointmentStatusClass(
+  status: string,
+  active: boolean,
+) {
+  if (status === "no_show") {
+    return "bg-red-50 text-red-700";
+  }
+
+  if (status === "canceled") {
+    return "bg-rose-50 text-rose-700";
+  }
+
+  if (active) {
+    return "bg-emerald-50 text-emerald-700";
+  }
+
+  return "bg-[#F1EDE6] text-[var(--text-muted)]";
 }
 
 export default async function MeusAgendamentosPage({
@@ -155,6 +175,8 @@ export default async function MeusAgendamentosPage({
         status,
         total_price,
         public_reference,
+        cancellation_reason,
+        no_show_at,
         services!appointments_service_tenant_fk (
           name
         ),
@@ -263,15 +285,8 @@ export default async function MeusAgendamentosPage({
       {!appointmentsError &&
         items.map((item) => {
           /*
-           * Aqui está a correção dos dois erros do TypeScript.
-           *
-           * Se o Supabase retornar:
-           *
-           * [{ name: "Barba" }]
-           *
-           * eu transformo em:
-           *
-           * { name: "Barba" }
+           * Se o Supabase retornar a relação como array eu normalizo
+           * para um único objeto antes de acessar o nome.
            */
           const service =
             singleRelation(
@@ -297,7 +312,7 @@ export default async function MeusAgendamentosPage({
               className="overflow-hidden"
             >
               <div className="flex flex-col justify-between gap-5 md:flex-row md:items-center">
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <CardTitle>
                       {service?.name ??
@@ -307,10 +322,10 @@ export default async function MeusAgendamentosPage({
                     <span
                       className={[
                         "rounded-full px-2.5 py-1 text-[11px] font-extrabold",
-
-                        active
-                          ? "bg-emerald-50 text-emerald-700"
-                          : "bg-[#F1EDE6] text-[var(--text-muted)]",
+                        appointmentStatusClass(
+                          item.status,
+                          active,
+                        ),
                       ].join(" ")}
                     >
                       {STATUS_LABELS[
@@ -349,6 +364,43 @@ export default async function MeusAgendamentosPage({
                       </span>
                     )}
                   </div>
+
+                  {item.status === "no_show" && (
+                    <div className="mt-4 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-800">
+                      <UserX className="mt-0.5 h-5 w-5 shrink-0" />
+
+                      <div>
+                        <p className="font-extrabold">
+                          Cancelado por não comparecimento
+                        </p>
+
+                        <p className="mt-1 text-sm leading-6">
+                          Motivo: a barbearia registrou este atendimento como
+                          <strong> No-show</strong>.
+                        </p>
+
+                        {item.no_show_at && (
+                          <p className="mt-1 text-xs font-semibold text-red-700/80">
+                            Registrado em{" "}
+                            {formatarData(
+                              item.no_show_at,
+                              barbershop.timezone,
+                            )}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {item.status === "canceled" &&
+                    item.cancellation_reason && (
+                      <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm leading-6 text-rose-800">
+                        <strong>
+                          Motivo do cancelamento:
+                        </strong>{" "}
+                        {item.cancellation_reason}
+                      </div>
+                    )}
                 </div>
 
                 {active && (

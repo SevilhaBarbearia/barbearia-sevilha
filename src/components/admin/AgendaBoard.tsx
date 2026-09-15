@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useMemo,
   useState,
 } from "react";
 import {
@@ -10,9 +11,11 @@ import {
   Phone,
   Scissors,
   UserRound,
+  UserX,
 } from "lucide-react";
 
 import { AdminModal } from "@/components/admin/AdminModal";
+import { AppointmentOutcomeActions } from "@/components/admin/AppointmentOutcomeActions";
 import { CompleteAppointmentModal } from "@/components/admin/CompleteAppointmentModal";
 import { formatarMoeda } from "@/lib/utils";
 
@@ -64,7 +67,7 @@ const STATUS_LABELS: Record<
   pending: "Pendente",
   confirmed: "Confirmado",
   completed: "Concluído",
-  no_show: "Não compareceu",
+  no_show: "No-show",
   canceled: "Cancelado",
 };
 
@@ -114,12 +117,35 @@ export function AgendaBoard({
   columns: AgendaBarberColumn[];
 }) {
   const [
-    selected,
-    setSelected,
-  ] =
-    useState<AgendaAppointmentView | null>(
-      null,
-    );
+    selectedId,
+    setSelectedId,
+  ] = useState<string | null>(null);
+
+  /*
+   * Eu guardo somente o ID selecionado.
+   *
+   * Quando uma Server Action revalida a agenda, as props recebem o novo
+   * status e o modal também se atualiza. Isso evita manter uma cópia antiga
+   * da reserva depois de cancelar, concluir ou registrar no-show.
+   */
+  const selected = useMemo(() => {
+    if (!selectedId) {
+      return null;
+    }
+
+    for (const column of columns) {
+      for (const segment of column.segments) {
+        if (
+          segment.kind === "appointment" &&
+          segment.appointment.id === selectedId
+        ) {
+          return segment.appointment;
+        }
+      }
+    }
+
+    return null;
+  }, [columns, selectedId]);
 
   return (
     <>
@@ -219,8 +245,8 @@ export function AgendaBoard({
                         }
                         type="button"
                         onClick={() =>
-                          setSelected(
-                            appointment,
+                          setSelectedId(
+                            appointment.id,
                           )
                         }
                         className="group rounded-2xl border border-white/10 bg-[#223246] p-4 text-left transition hover:-translate-y-0.5 hover:border-amber-300/30 hover:bg-[#26394F] focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
@@ -292,7 +318,7 @@ export function AgendaBoard({
           selected,
         )}
         onClose={() =>
-          setSelected(null)
+          setSelectedId(null)
         }
         title="Detalhes do atendimento"
         description="Informações completas da reserva selecionada."
@@ -370,6 +396,20 @@ export function AgendaBoard({
               </div>
             </div>
 
+            {selected.status === "no_show" && (
+              <div className="rounded-2xl border border-red-300/20 bg-red-300/[0.07] p-4 text-sm text-red-100">
+                <p className="flex items-center gap-2 font-extrabold">
+                  <UserX className="h-4 w-4" />
+                  Cancelado por não comparecimento
+                </p>
+
+                <p className="mt-2 leading-6 text-red-100/70">
+                  Este atendimento foi registrado como no-show e permanece no
+                  histórico para relatórios de ausência.
+                </p>
+              </div>
+            )}
+
             {selected.payment && (
               <div className="rounded-2xl border border-cyan-300/15 bg-cyan-300/[0.05] p-4 text-sm text-cyan-100">
                 <p className="flex items-center gap-2 font-extrabold">
@@ -399,21 +439,33 @@ export function AgendaBoard({
             ].includes(
               selected.status,
             ) && (
-              <CompleteAppointmentModal
-                slug={slug}
-                appointmentId={
-                  selected.id
-                }
-                customerName={
-                  selected.customerName
-                }
-                serviceName={
-                  selected.serviceName
-                }
-                amount={
-                  selected.totalPrice
-                }
-              />
+              <>
+                <CompleteAppointmentModal
+                  slug={slug}
+                  appointmentId={
+                    selected.id
+                  }
+                  customerName={
+                    selected.customerName
+                  }
+                  serviceName={
+                    selected.serviceName
+                  }
+                  amount={
+                    selected.totalPrice
+                  }
+                />
+
+                <AppointmentOutcomeActions
+                  slug={slug}
+                  appointmentId={
+                    selected.id
+                  }
+                  customerName={
+                    selected.customerName
+                  }
+                />
+              </>
             )}
           </div>
         )}

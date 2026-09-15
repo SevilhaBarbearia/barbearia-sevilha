@@ -1,7 +1,7 @@
 -- release_readiness.sql
 -- SOMENTE LEITURA.
 -- Eu uso este arquivo depois das migrations para confirmar funções,
--- políticas, rollout e integridade multi-tenant sem alterar nenhum dado.
+-- políticas, rollout, no-show e integridade multi-tenant sem alterar nenhum dado.
 
 -- 1. Objetos críticos esperados.
 select
@@ -32,6 +32,22 @@ select
   'cancel_my_appointment',
   to_regprocedure(
     'public.cancel_my_appointment(uuid,text)'
+  ) is not null
+
+union all
+
+select
+  'cancel_appointment_by_manager',
+  to_regprocedure(
+    'public.cancel_appointment_by_manager(uuid,uuid,text)'
+  ) is not null
+
+union all
+
+select
+  'mark_appointment_no_show',
+  to_regprocedure(
+    'public.mark_appointment_no_show(uuid,uuid)'
   ) is not null
 
 union all
@@ -75,7 +91,31 @@ select
   ) as ok;
 
 
--- 4. Policies críticas.
+-- 4. Metadados estruturados de no-show.
+select
+  'appointments_no_show_at_column' as check_name,
+  exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'appointments'
+      and column_name = 'no_show_at'
+  ) as ok
+
+union all
+
+select
+  'appointments_no_show_marked_by_column',
+  exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'appointments'
+      and column_name = 'no_show_marked_by'
+  );
+
+
+-- 5. Policies críticas.
 select
   tablename,
   policyname
@@ -98,7 +138,7 @@ order by
   policyname;
 
 
--- 5. Nenhuma reserva pode apontar para entidade de outro tenant.
+-- 6. Nenhuma reserva pode apontar para entidade de outro tenant.
 select
   'appointment_customer_tenant_mismatch'
     as check_name,
@@ -140,10 +180,19 @@ from public.presencial_payments p
 join public.appointments a
   on a.id = p.appointment_id
 where p.barbershop_id <>
-  a.barbershop_id;
+  a.barbershop_id
+
+union all
+
+select
+  'no_show_without_metadata',
+  count(*)
+from public.appointments a
+where a.status = 'no_show'
+  and a.no_show_at is null;
 
 
--- 6. Inventário para o canary de múltiplos tenants.
+-- 7. Inventário para o canary de múltiplos tenants.
 select
   b.id,
   b.slug,
