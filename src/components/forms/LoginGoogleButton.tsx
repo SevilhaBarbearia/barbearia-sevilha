@@ -1,37 +1,129 @@
 "use client";
 
-import { createClient } from "@/lib/supabase/client";
+import {
+  useState,
+} from "react";
+
+import {
+  LogIn,
+} from "lucide-react";
+
 import { Button } from "@/components/ui/Button";
+import { createClient } from "@/lib/supabase/client";
 
 function obterOrigemAtual() {
-  // Em produção, usar window.location.origin evita que um valor antigo da Vercel
-  // ou do .env local faça o OAuth voltar para http://localhost:3000.
-  if (typeof window !== "undefined") return window.location.origin;
+  if (
+    typeof window !==
+    "undefined"
+  ) {
+    return window.location.origin;
+  }
+
   return (
-    process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ??
+    process.env.NEXT_PUBLIC_SITE_URL?.replace(
+      /\/$/,
+      "",
+    ) ??
     "http://localhost:3000"
   );
 }
 
-export function LoginGoogleButton({ slug = "sevilha" }: { slug?: string }) {
-  async function entrarComGoogle() {
-    const supabase = createClient();
-    const siteUrl = obterOrigemAtual();
+function safeInternalPath(
+  value: string | undefined,
+  fallback: string,
+) {
+  if (
+    value &&
+    value.startsWith("/") &&
+    !value.startsWith("//") &&
+    !value.includes("\\") &&
+    !/[\x00-\x1f]/.test(value)
+  ) {
+    return value;
+  }
 
-    await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${siteUrl}/auth/callback?next=/${slug}/reservar`,
-      },
-    });
+  return fallback;
+}
+
+export function LoginGoogleButton({
+  slug,
+  next,
+}: {
+  slug: string;
+  next?: string;
+}) {
+  const [loading, setLoading] =
+    useState(false);
+
+  async function entrarComGoogle() {
+    if (loading) return;
+
+    setLoading(true);
+
+    const supabase =
+      createClient();
+
+    const siteUrl =
+      obterOrigemAtual();
+
+    const safeNext =
+      safeInternalPath(
+        next,
+        `/${slug}/reservar`,
+      );
+
+    const callback =
+      new URL(
+        "/auth/callback",
+        siteUrl,
+      );
+
+    callback.searchParams.set(
+      "next",
+      safeNext,
+    );
+
+    const { error } =
+      await supabase.auth.signInWithOAuth(
+        {
+          provider: "google",
+
+          options: {
+            redirectTo:
+              callback.toString(),
+          },
+        },
+      );
+
+    if (error) {
+      setLoading(false);
+    }
   }
 
   return (
-    <Button type="button" onClick={entrarComGoogle} className="w-full">
-      <span className="grid h-6 w-6 place-items-center rounded-full bg-white text-sm font-black text-zinc-950">
-        G
+    <Button
+      type="button"
+      onClick={entrarComGoogle}
+      disabled={loading}
+      className="w-full"
+    >
+      {loading ? (
+        <span className="h-5 w-5 animate-spin rounded-full border-2 border-current border-r-transparent" />
+      ) : (
+        <span className="grid h-7 w-7 place-items-center rounded-full bg-white font-black text-zinc-950 shadow-sm">
+          G
+        </span>
+      )}
+
+      <span>
+        {loading
+          ? "Abrindo Google..."
+          : "Continuar com Google"}
       </span>
-      Entrar com Google
+
+      {!loading && (
+        <LogIn className="h-4 w-4 opacity-60" />
+      )}
     </Button>
   );
 }

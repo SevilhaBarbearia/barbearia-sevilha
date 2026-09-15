@@ -2,6 +2,7 @@ import Link from "next/link";
 import {
   CalendarCheck,
   ClipboardClock,
+  Gift,
   History,
   UserRound,
 } from "lucide-react";
@@ -15,19 +16,21 @@ export function ClienteSidebar({
 
   const links = [
     {
-      label: "Meus agendamentos",
+      label:
+        "Meus agendamentos",
       href: `${base}/cliente/agendamentos`,
       icon: ClipboardClock,
     },
     {
-      label: "Novo agendamento",
+      label:
+        "Novo agendamento",
       href: `${base}/reservar`,
       icon: CalendarCheck,
     },
     {
       label: "Fidelidade",
       href: `${base}/cliente/fidelidade`,
-      icon: CalendarCheck,
+      icon: Gift,
     },
     {
       label: "Perfil",
@@ -42,24 +45,31 @@ export function ClienteSidebar({
   ];
 
   return (
-    <aside className="ui-client-sidebar rounded-[1.75rem] border border-white/10 bg-white/[0.06] p-4 shadow-premium backdrop-blur-xl md:w-80">
-      <p className="ui-client-sidebar-title mb-4 px-2 text-lg font-black text-white">
-        Área do Cliente
+    <aside className="ui-client-sidebar overflow-hidden rounded-[1.75rem] border p-3 md:sticky md:top-24 md:w-72 lg:w-80">
+      <p className="ui-client-sidebar-title mb-3 px-3 pt-2 text-lg font-extrabold">
+        Minha conta
       </p>
 
-      <nav className="grid gap-2">
-        {links.map(({ label, href, icon: Icone }) => (
-          <Link
-            key={href}
-            href={href}
-            className="ui-client-sidebar-link inline-flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-zinc-300 transition hover:bg-brand-500/10 hover:text-white"
-          >
-            <span className="grid h-8 w-8 place-items-center rounded-lg bg-white/[0.06] text-brand-100 lg:h-9 lg:w-9 lg:rounded-xl">
-              <Icone className="h-4 w-4" />
-            </span>
-            {label}
-          </Link>
-        ))}
+      <nav className="flex gap-2 overflow-x-auto pb-1 md:grid md:overflow-visible">
+        {links.map(
+          ({
+            label,
+            href,
+            icon: Icone,
+          }) => (
+            <Link
+              key={href}
+              href={href}
+              className="ui-client-sidebar-link inline-flex shrink-0 items-center gap-3 rounded-2xl border border-transparent px-3 py-2.5 text-sm font-bold transition hover:border-[var(--border)] md:w-full"
+            >
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[var(--tenant-accent-soft)] text-[var(--tenant-accent)]">
+                <Icone className="h-4 w-4" />
+              </span>
+
+              {label}
+            </Link>
+          ),
+        )}
       </nav>
     </aside>
   );
