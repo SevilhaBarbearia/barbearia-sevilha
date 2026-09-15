@@ -1,22 +1,14 @@
 import Link from "next/link";
 import {
-  CalendarDays,
-  Clock3,
-  CreditCard,
-  Gift,
-  LayoutDashboard,
-  MessageSquareText,
-  Scissors,
-  Settings,
-  TrendingUp,
-  UsersRound,
-  ClipboardList,
   Home,
 } from "lucide-react";
 
-import { AdminNav } from "@/components/admin/AdminNav";
-import { ActionForm } from "@/components/forms/ActionForm";
+import {
+  AdminNav,
+  type AdminIconName,
+} from "@/components/admin/AdminNav";
 import { Logo } from "@/components/brand/Logo";
+import { ActionForm } from "@/components/forms/ActionForm";
 import { Button } from "@/components/ui/Button";
 import { sairAdministrador } from "@/lib/auth/admin-actions";
 
@@ -31,61 +23,71 @@ export function AdminSidebar({
 }) {
   const base = `/admin/${slug}`;
 
-  const links = [
+  /*
+   * IMPORTANTE:
+   * AdminSidebar é Server Component e AdminNav é Client Component.
+   * Portanto só enviamos dados serializáveis para o cliente.
+   * Componentes/funções Lucide não podem atravessar essa fronteira.
+   */
+  const links: Array<{
+    label: string;
+    href: string;
+    icon: AdminIconName;
+  }> = [
     {
       label: "Dashboard",
       href: base,
-      icon: LayoutDashboard,
+      icon: "dashboard",
     },
     {
       label: "Agenda do dia",
       href: `${base}/agenda`,
-      icon: CalendarDays,
+      icon: "agenda",
     },
     {
       label: "Reservas",
       href: `${base}/reservas`,
-      icon: ClipboardList,
+      icon: "reservas",
     },
     {
       label: "Serviços",
       href: `${base}/servicos`,
-      icon: Scissors,
+      icon: "servicos",
     },
     {
       label: "Barbeiros",
       href: `${base}/barbeiros`,
-      icon: UsersRound,
+      icon: "barbeiros",
     },
     {
       label: "Horários",
       href: `${base}/horarios`,
-      icon: Clock3,
+      icon: "horarios",
     },
     {
       label: "Fidelidade",
       href: `${base}/fidelidade`,
-      icon: Gift,
+      icon: "fidelidade",
     },
     {
       label: "Satisfação",
       href: `${base}/satisfacao`,
-      icon: MessageSquareText,
+      icon: "satisfacao",
     },
     {
       label: "Pagamentos",
       href: `${base}/pagamentos`,
-      icon: CreditCard,
+      icon: "pagamentos",
     },
     {
       label: "Faturamento",
       href: `${base}/faturamento`,
-      icon: TrendingUp,
+      icon: "faturamento",
     },
     {
       label: "Configurações",
       href: `${base}/configuracoes`,
-      icon: Settings,
+      icon: "configuracoes",
     },
   ];
 

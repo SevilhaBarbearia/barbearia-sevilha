@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Manrope } from "next/font/google";
 import "./globals.css";
 
+import { NavigationLoadingBar } from "@/components/ui/NavigationLoadingBar";
 import { AuthProvider } from "@/lib/auth/auth-provider";
 
 const manrope = Manrope({
@@ -12,7 +13,8 @@ const manrope = Manrope({
 
 export const metadata: Metadata = {
   title: "Agendamento online",
-  description: "Plataforma de agendamentos para barbearias.",
+  description:
+    "Plataforma de agendamentos para barbearias.",
 };
 
 export default function RootLayout({
@@ -27,7 +29,11 @@ export default function RootLayout({
       className={manrope.variable}
     >
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        <NavigationLoadingBar />
+
+        <AuthProvider>
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );

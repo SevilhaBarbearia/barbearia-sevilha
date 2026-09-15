@@ -1,14 +1,17 @@
 import {
   CalendarCheck,
   CheckCircle2,
+  LogIn,
   ShieldCheck,
 } from "lucide-react";
 
+import { LoginGoogleButton } from "@/components/forms/LoginGoogleButton";
 import { ReservaForm } from "@/components/forms/ReservaForm";
 import { NavPublica } from "@/components/layout/NavPublica";
 import { Badge } from "@/components/ui/Badge";
 import { requireBarbershop } from "@/features/tenancy/server";
 import { obterUsuarioAtual } from "@/lib/auth/permissoes";
+import { isGoogleAuthEnabled } from "@/lib/auth/provider-settings";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +52,7 @@ export default async function ReservarPage({
     { data: services },
     { data: barbers },
     { data: settings },
+    googleEnabled,
   ] = await Promise.all([
     supabase
       .from("services")
@@ -82,6 +86,10 @@ export default async function ReservarPage({
         barbershop.id,
       )
       .maybeSingle(),
+
+    user
+      ? Promise.resolve(false)
+      : isGoogleAuthEnabled(),
   ]);
 
   const brandName =
@@ -107,7 +115,7 @@ export default async function ReservarPage({
 
       <section className="ui-barber-ambient">
         <div className="relative z-10 mx-auto max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
-          <div className="grid gap-6 lg:grid-cols-[1fr_0.38fr] lg:items-start">
+          <div className="grid gap-6 lg:grid-cols-[1fr_0.42fr] lg:items-start">
             <div>
               <Badge>
                 <CalendarCheck className="h-3.5 w-3.5" />
@@ -119,23 +127,22 @@ export default async function ReservarPage({
               </h1>
 
               <p className="ui-body mt-3 max-w-2xl text-[var(--text-muted)]">
-                Escolha serviço, profissional, data e horário. Não é necessário
-                ter conta Google para fazer uma reserva.
+                Você escolhe como reservar: sem conta, usando apenas nome e
+                telefone, ou com sua conta Google para facilitar o acompanhamento.
               </p>
             </div>
 
-            <div className="hidden rounded-3xl border border-[var(--border)] bg-white/90 p-5 shadow-[0_14px_38px_rgba(68,48,26,0.07)] lg:block">
+            <div className="rounded-3xl border border-[var(--border)] bg-white/90 p-5 shadow-[0_14px_38px_rgba(68,48,26,0.07)]">
               <div className="flex items-start gap-3">
                 <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[var(--tenant-accent)]" />
 
                 <div>
                   <p className="font-extrabold text-[var(--text)]">
-                    Reserva simples
+                    Escolha como continuar
                   </p>
 
                   <p className="mt-1 text-sm leading-6 text-[var(--text-muted)]">
-                    Para reservar sem conta, basta informar nome e telefone.
-                    O e-mail é opcional.
+                    Reservar sem login continua sendo a opção mais rápida.
                   </p>
                 </div>
               </div>
@@ -143,14 +150,38 @@ export default async function ReservarPage({
               <div className="mt-4 grid gap-2 text-sm text-[var(--text-muted)]">
                 <span className="flex items-center gap-2">
                   <CheckCircle2 className="h-4 w-4 text-[var(--tenant-accent)]" />
-                  Sem login obrigatório
+                  Sem conta: nome + telefone
                 </span>
 
                 <span className="flex items-center gap-2">
                   <CheckCircle2 className="h-4 w-4 text-[var(--tenant-accent)]" />
-                  Conflitos continuam protegidos
+                  Com conta: histórico e fidelidade
                 </span>
               </div>
+
+              {!user && googleEnabled && (
+                <div className="mt-5 border-t border-[var(--border)] pt-5">
+                  <p className="mb-3 flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.12em] text-[var(--text-muted)]">
+                    <LogIn className="h-4 w-4 text-[var(--tenant-accent)]" />
+                    Login opcional
+                  </p>
+
+                  <LoginGoogleButton
+                    slug={barbershop.slug}
+                    next={`/${barbershop.slug}/reservar`}
+                  />
+
+                  <p className="mt-3 text-center text-xs leading-5 text-[var(--text-muted)]">
+                    Ou simplesmente continue preenchendo o formulário abaixo.
+                  </p>
+                </div>
+              )}
+
+              {user && (
+                <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-900">
+                  Você está conectado. A reserva será associada à sua conta.
+                </div>
+              )}
             </div>
           </div>
 
@@ -166,7 +197,9 @@ export default async function ReservarPage({
                   profile?.full_name ??
                   user?.user_metadata?.name ??
                   "",
-                phone: profile?.phone ?? "",
+                phone:
+                  profile?.phone ??
+                  "",
                 email:
                   profile?.email ??
                   user?.email ??
@@ -174,13 +207,21 @@ export default async function ReservarPage({
               }}
               initialSelection={{
                 serviceId:
-                  firstParam(query.service),
+                  firstParam(
+                    query.service,
+                  ),
                 barberId:
-                  firstParam(query.barber),
+                  firstParam(
+                    query.barber,
+                  ),
                 date:
-                  firstParam(query.date),
+                  firstParam(
+                    query.date,
+                  ),
                 startAt:
-                  firstParam(query.start),
+                  firstParam(
+                    query.start,
+                  ),
               }}
             />
           </div>
