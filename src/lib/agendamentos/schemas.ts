@@ -2,6 +2,15 @@ import { z } from "zod";
 
 const telefoneRegex = /^\(?\d{2}\)?\s?9?\d{4}-?\d{4}$/;
 
+const dataHorarioSchema = z
+  .string()
+  .trim()
+  .min(1, "Selecione um horário.")
+  .refine(
+    (value) => Number.isFinite(Date.parse(value)),
+    "Data e horário inválidos.",
+  );
+
 export const dadosClienteSchema = z.object({
   full_name: z
     .string()
@@ -25,7 +34,7 @@ export const completarCadastroSchema = dadosClienteSchema;
 export const criarAgendamentoSchema = z.object({
   service_id: z.string().uuid("Serviço inválido."),
   barber_id: z.string().uuid("Barbeiro inválido."),
-  start_at: z.string().datetime("Data e horário inválidos."),
+  start_at: dataHorarioSchema,
   client_notes: z
     .string()
     .max(500, "A observação deve ter até 500 caracteres.")

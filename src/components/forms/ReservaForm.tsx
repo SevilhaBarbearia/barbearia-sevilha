@@ -161,6 +161,23 @@ export function ReservaForm({
   const [startAt, setStartAt] =
     useState(initialSelection?.startAt ?? "");
 
+  /*
+   * Campos de identificação ficam controlados para não serem apagados
+   * quando a Server Action retorna um erro de validação/regra de negócio.
+   * React 19 pode resetar inputs não controlados após uma Form Action.
+   */
+  const [fullName, setFullName] =
+    useState(initialContact?.name ?? "");
+
+  const [phone, setPhone] =
+    useState(initialContact?.phone ?? "");
+
+  const [email, setEmail] =
+    useState(initialContact?.email ?? "");
+
+  const [clientNotes, setClientNotes] =
+    useState("");
+
   useEffect(() => {
     const barbeiroContinuaDisponivel =
       barbeirosDoServico.some(
@@ -369,8 +386,9 @@ export function ReservaForm({
               <Input
                 id="full_name"
                 name="full_name"
-                defaultValue={
-                  initialContact?.name ?? ""
+                value={fullName}
+                onChange={(event) =>
+                  setFullName(event.target.value)
                 }
                 autoComplete="name"
                 placeholder="Seu nome"
@@ -386,8 +404,9 @@ export function ReservaForm({
               <Input
                 id="phone"
                 name="phone"
-                defaultValue={
-                  initialContact?.phone ?? ""
+                value={phone}
+                onChange={(event) =>
+                  setPhone(event.target.value)
                 }
                 autoComplete="tel"
                 inputMode="tel"
@@ -405,8 +424,9 @@ export function ReservaForm({
                 id="email"
                 name="email"
                 type="email"
-                defaultValue={
-                  initialContact?.email ?? ""
+                value={email}
+                onChange={(event) =>
+                  setEmail(event.target.value)
                 }
                 autoComplete="email"
                 placeholder="Opcional"
@@ -433,6 +453,10 @@ export function ReservaForm({
 
         <Textarea
           name="client_notes"
+          value={clientNotes}
+          onChange={(event) =>
+            setClientNotes(event.target.value)
+          }
           placeholder="Ex.: prefiro degradê baixo, cabelo mais curto nas laterais..."
           rows={4}
         />
