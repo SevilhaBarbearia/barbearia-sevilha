@@ -45,9 +45,11 @@ try {
   if (!process.exitCode) {
     const admin = "10000000-0000-4000-8000-000000000001",
       client = "10000000-0000-4000-8000-000000000002",
-      owner = "10000000-0000-4000-8000-000000000003";
-    await db.exec(`insert into auth.users(id,email,raw_user_meta_data) values ('${admin}','admin@example.test','{"name":"Admin"}'),('${client}','client@example.test','{"name":"Cliente"}'),('${owner}','owner@example.test','{"name":"Owner"}');
+      owner = "10000000-0000-4000-8000-000000000003",
+      tenantAdmin = "10000000-0000-4000-8000-000000000004";
+    await db.exec(`insert into auth.users(id,email,raw_user_meta_data) values ('${admin}','admin@example.test','{"name":"Admin"}'),('${client}','client@example.test','{"name":"Cliente"}'),('${owner}','owner@example.test','{"name":"Owner"}'),('${tenantAdmin}','tenant-admin@example.test','{"name":"Tenant Admin"}');
  update public.profiles set role='admin',is_platform_admin=true where id='${admin}';
+ update public.profiles set role='admin',is_platform_admin=false where id='${tenantAdmin}';
  update public.profiles set phone='83999999999' where id='${client}';`);
     const q = async (sql, args = []) => (await db.query(sql, args)).rows;
     const login = async (id) => {
@@ -97,10 +99,24 @@ try {
         [shop],
       )
     )[0].id;
+
+    /*
+     * Eu crio um administrador REAL do tenant para os testes operacionais.
+     * O Platform Admin não recebe membership automaticamente.
+     */
+    await db.exec(`reset role;
+      insert into public.barbershop_members(barbershop_id,profile_id,role,is_active)
+      values ('${shop}','${tenantAdmin}','owner',true)
+      on conflict (barbershop_id,profile_id)
+      do update set role='owner',is_active=true;
+    `);
+
+    await login(tenantAdmin);
     await q(
       "update public.loyalty_programs set is_active=true where barbershop_id=$1",
       [shop],
     );
+
     const legacy = (
       await q(
         "select a.total_price,c.profile_id,a.barbershop_id from public.appointments a join public.customers c on c.id=a.customer_id where a.id='90000000-0000-4000-8000-000000000004'",
@@ -200,6 +216,7 @@ try {
     }
     assert(rejected);
     console.log("PASS referência cruzada recusada");
+
     await login(owner);
     assert.equal(
       (await q("select * from public.appointments where id=$1", [appointment]))
@@ -214,7 +231,106 @@ try {
     }
     assert(rejected);
     console.log("PASS isolamento de administrador");
+
+    /*
+     * TESTE NEGATIVO OBRIGATÓRIO:
+     * is_platform_admin não transforma a conta em manager do tenant.
+     */
     await login(admin);
+    assert.equal(
+      (
+        await q(
+          "select public.can_manage_barbershop($1) as allowed",
+          [shop],
+        )
+      )[0].allowed,
+      false,
+    );
+    assert.equal(
+      (await q("select * from public.appointments where id=$1", [appointment]))
+        .length,
+      0,
+    );
+    rejected = false;
+    try {
+      await q("select public.mark_appointment_completed($1)", [appointment]);
+    } catch {
+      rejected = true;
+    }
+    assert(rejected);
+    console.log("PASS Platform Admin sem acesso operacional permanente");
+
+    /*
+     * O acesso de suporte é temporário, read-only e escopado.
+     */
+    const supportSession = (
+      await q(
+        "select public.platform_open_support_session($1,'Investigar reserva ausente','TEST-001',array['schedule_read'],30) as id",
+        [shop],
+      )
+    )[0].id;
+
+    const supportAppointments =
+      await q(
+        "select * from public.platform_support_list_appointments($1,$2::timestamptz,$3::timestamptz)",
+        [
+          shop,
+          slots[0].startAt,
+          new Date(
+            new Date(slots[0].startAt).getTime() +
+              24 * 60 * 60 * 1000,
+          ).toISOString(),
+        ],
+      );
+
+    assert(
+      supportAppointments.some(
+        (item) =>
+          item.appointment_id ===
+          appointment,
+      ),
+    );
+
+    rejected = false;
+    try {
+      await q(
+        "select * from public.platform_support_get_customer_contact($1,$2)",
+        [
+          shop,
+          supportAppointments[0].customer_id,
+        ],
+      );
+    } catch {
+      rejected = true;
+    }
+    assert(rejected);
+    console.log("PASS suporte respeita escopo");
+
+    await q(
+      "select public.platform_close_support_session($1,'Diagnóstico concluído')",
+      [supportSession],
+    );
+
+    rejected = false;
+    try {
+      await q(
+        "select * from public.platform_support_list_appointments($1,$2::timestamptz,$3::timestamptz)",
+        [
+          shop,
+          slots[0].startAt,
+          new Date(
+            new Date(slots[0].startAt).getTime() +
+              24 * 60 * 60 * 1000,
+          ).toISOString(),
+        ],
+      );
+    } catch {
+      rejected = true;
+    }
+    assert(rejected);
+    console.log("PASS suporte expira/encerra sem deixar atalho");
+
+    await login(tenantAdmin);
     await q("select public.mark_appointment_completed($1)", [appointment]);
     rejected = false;
     try {
@@ -285,6 +401,7 @@ try {
       false,
     );
     console.log("PASS avaliação de uso único");
+
     await login(admin);
     rejected = false;
     try {
@@ -294,6 +411,8 @@ try {
     }
     assert(rejected);
     console.log("PASS token da fila protegido");
+
+    await login(tenantAdmin);
     await q(
       "update public.notification_settings set birthday_enabled=true,birthday_send_time='00:00' where barbershop_id=$1",
       [shop],

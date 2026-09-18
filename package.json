@@ -13,8 +13,9 @@
     "test:ownership": "node --test tests/customer-ownership.test.mjs",
     "test:release": "node --test tests/release-readiness.test.mjs",
     "test:rollout": "node --test tests/tenant-ui-rollout.test.mjs",
+    "test:platform": "node --test tests/platform-security.test.mjs",
     "validate": "npm run typecheck && npm test && npm run build",
-    "release:check": "npm run test:rollout && npm run validate",
+    "release:check": "npm run test:rollout && npm run test:platform && npm run validate",
     "smoke:prod": "node scripts/smoke-production.mjs",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" next.config.ts",
     "test:db": "node tests/database.test.mjs"

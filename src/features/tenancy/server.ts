@@ -41,6 +41,7 @@ export async function getBarbershopBySlug(
       .select("*")
       .eq("slug", slug)
       .eq("is_active", true)
+      .is("archived_at", null)
       .maybeSingle<Barbershop>();
 
   return data;
@@ -80,25 +81,15 @@ export async function requireBarbershopManager(
     );
   }
 
-  /*
-   * Administrador da plataforma é uma conta interna do SaaS.
-   * O owner/manager de uma barbearia NÃO recebe esta exceção.
-   */
-  if (
-    admin.profile
-      .is_platform_admin
-  ) {
-    return {
-      ...admin,
-      barbershop,
-      membershipRole:
-        "owner" as MembershipRole,
-    };
-  }
-
   const supabase =
     await createClient();
 
+  /*
+   * Não existe mais exceção para is_platform_admin.
+   *
+   * Um usuário só administra o tenant se possuir membership ativa
+   * owner/manager naquele barbershop_id.
+   */
   const { data: membership } =
     await supabase
       .from(
@@ -123,9 +114,7 @@ export async function requireBarbershopManager(
       }>();
 
   /*
-   * Eu retorno 404 em vez de revelar que outro tenant existe.
-   * Mesmo conhecendo o slug de outra barbearia, o administrador
-   * não consegue consultar qualquer dado dela.
+   * Eu retorno 404 para não revelar a existência de outro tenant.
    */
   if (!membership) {
     notFound();
@@ -150,22 +139,11 @@ export async function listManagedBarbershops() {
   const supabase =
     await createClient();
 
-  if (
-    admin.profile
-      .is_platform_admin
-  ) {
-    const { data } =
-      await supabase
-        .from("barbershops")
-        .select("*")
-        .eq("is_active", true)
-        .order("name");
-
-    return (
-      data ?? []
-    ) as Barbershop[];
-  }
-
+  /*
+   * Platform Admin não recebe mais uma lista global por esta função.
+   * Esta função representa exclusivamente tenants administrados
+   * por membership owner/manager.
+   */
   const { data } =
     await supabase
       .from(
@@ -196,7 +174,8 @@ export async function listManagedBarbershops() {
         item,
       ): item is Barbershop =>
         Boolean(
-          item?.is_active,
+          item?.is_active &&
+            !item.archived_at,
         ),
     );
 }

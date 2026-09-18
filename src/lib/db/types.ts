@@ -8,6 +8,27 @@ export type PaymentStatus = "pending" | "paid" | "canceled";
 export type MembershipRole = "owner" | "manager" | "staff";
 export type LoyaltyEarningMode = "visit" | "amount" | "service";
 
+export type SubscriptionStatus =
+  | "trial"
+  | "active"
+  | "past_due"
+  | "suspended"
+  | "canceled"
+  | "expired";
+
+export type TenantUiVersion =
+  | "legacy"
+  | "warm-premium";
+
+export type PlatformFeatureCode =
+  | "loyalty"
+  | "birthday_notifications"
+  | "satisfaction_survey"
+  | "email_notifications"
+  | "whatsapp_notifications"
+  | "advanced_reports"
+  | "custom_domain";
+
 export type Profile = {
   id: string;
   full_name: string | null;
@@ -35,6 +56,10 @@ export type Barbershop = {
   secondary_color: string;
   timezone: string;
   is_active: boolean;
+  ui_version: TenantUiVersion;
+  archived_at: string | null;
+  archived_by: string | null;
+  archive_reason: string | null;
 };
 
 export type Customer = {
