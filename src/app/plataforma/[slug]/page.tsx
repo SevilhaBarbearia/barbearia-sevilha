@@ -69,6 +69,16 @@ export default async function PlatformTenantPage({
     ? barbershop.subscriptions[0]
     : barbershop.subscriptions;
 
+  /*
+   * O Supabase tipa relacoes many-to-one como array. Normalizo
+   * para o registro unico antes de usar.
+   */
+  const organization = Array.isArray(
+    barbershop.organizations,
+  )
+    ? barbershop.organizations[0]
+    : barbershop.organizations;
+
   const plan = Array.isArray(subscription?.plans)
     ? subscription?.plans[0]
     : subscription?.plans;
@@ -192,7 +202,7 @@ export default async function PlatformTenantPage({
             </h1>
             <p className="text-sm text-zinc-300">
               /{barbershop.slug} •{" "}
-              {barbershop.organizations?.name ?? "sem organizacao"}
+              {organization?.name ?? "sem organizacao"}
             </p>
           </div>
 

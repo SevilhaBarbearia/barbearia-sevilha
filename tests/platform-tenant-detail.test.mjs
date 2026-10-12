@@ -52,7 +52,7 @@ test("tenant-actions nunca usa redirect para painel de tenant", () => {
 
 test("SubscriptionForm trata motivo obrigatorio em suspensao/cancelamento", () => {
   const src = read("src/components/platform/SubscriptionForm.tsx");
-  assert.match(src, /suspender ou cancelar/);
+  assert.match(src, /suspender\/cancelar/);
 });
 
 test("SupportSessionForm cobre todos os 5 escopos da 029", () => {

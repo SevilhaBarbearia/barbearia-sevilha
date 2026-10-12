@@ -25,3 +25,7 @@ Thumbs.db
 supabase/.temp/
 supabase/.branches/
 .env.edge
+
+# Artefatos de sessao (coleta de contexto / backups)
+_coleta-*.txt
+*.bak
