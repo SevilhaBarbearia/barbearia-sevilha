@@ -1,0 +1,5034 @@
+Repo: /c/Users/marco/OneDrive/Documentos/barbearia-Sevilha
+Data: 2026-10-11T11:59:09Z
+HEAD: 2316c26
+
+==== supabase/migrations/029_platform_admin_foundation.sql ====
+-- 029_platform_admin_foundation.sql
+--
+-- Fundação do Platform Admin.
+--
+-- Este bloco agrupa:
+-- 1. modelo comercial e feature flags por tenant;
+-- 2. separação real entre Platform Admin e owner/manager;
+-- 3. RLS das estruturas de plataforma;
+-- 4. auditoria de ações da plataforma;
+-- 5. modo suporte temporário, escopado e auditado;
+-- 6. trial de 15 dias SOMENTE para novos tenants.
+--
+-- IMPORTANTE:
+-- Esta migration NÃO altera trial_ends_at de subscriptions já existentes.
+
+-- O enum precisa receber o novo valor antes de ele ser utilizado em funções.
+alter type public.subscription_status
+  add value if not exists 'suspended';
+
+begin;
+
+-- ================================================================
+-- 1. CICLO DE VIDA DO TENANT
+-- ================================================================
+
+alter table public.barbershops
+  add column if not exists archived_at timestamptz,
+  add column if not exists archived_by uuid
+    references public.profiles(id)
+    on delete set null,
+  add column if not exists archive_reason text;
+
+comment on column public.barbershops.archived_at is
+  'Soft delete do tenant. O registro e os dados operacionais permanecem preservados.';
+
+alter table public.subscriptions
+  add column if not exists trial_started_at timestamptz,
+  add column if not exists activated_at timestamptz,
+  add column if not exists suspended_at timestamptz,
+  add column if not exists canceled_at timestamptz,
+  add column if not exists status_changed_at timestamptz not null default now(),
+  add column if not exists suspension_reason text,
+  add column if not exists cancellation_reason text;
+
+-- Eu preencho somente metadados ausentes.
+-- trial_ends_at NÃO é alterado: Sevilha/ExclusiveMen mantêm o prazo já concedido.
+update public.subscriptions
+set
+  trial_started_at = coalesce(trial_started_at, started_at, created_at),
+  status_changed_at = coalesce(status_changed_at, updated_at, created_at)
+where trial_started_at is null
+   or status_changed_at is null;
+
+-- ================================================================
+-- 2. CATÁLOGO DE FEATURES / PLANO / OVERRIDE POR TENANT
+-- ================================================================
+
+create table if not exists public.platform_features (
+  id uuid primary key default gen_random_uuid(),
+  code text not null unique
+    check (code ~ '^[a-z0-9]+(?:_[a-z0-9]+)*$'),
+  name text not null,
+  description text,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.plan_features (
+  plan_id uuid not null
+    references public.plans(id)
+    on delete cascade,
+  feature_id uuid not null
+    references public.platform_features(id)
+    on delete cascade,
+  enabled boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (plan_id, feature_id)
+);
+
+create table if not exists public.barbershop_feature_overrides (
+  barbershop_id uuid not null
+    references public.barbershops(id)
+    on delete cascade,
+  feature_id uuid not null
+    references public.platform_features(id)
+    on delete cascade,
+  enabled boolean not null,
+  reason text,
+  updated_by uuid
+    references public.profiles(id)
+    on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (barbershop_id, feature_id)
+);
+
+insert into public.platform_features (
+  code,
+  name,
+  description
+)
+values
+  (
+    'loyalty',
+    'Programa de fidelidade',
+    'Permite pontos, recompensas e resgates.'
+  ),
+  (
+    'birthday_notifications',
+    'Notificações de aniversário',
+    'Permite comunicação automática de aniversário.'
+  ),
+  (
+    'satisfaction_survey',
+    'Pesquisa de satisfação',
+    'Permite solicitar avaliação após o atendimento.'
+  ),
+  (
+    'email_notifications',
+    'Notificações por e-mail',
+    'Permite recursos que dependem de envio de e-mail.'
+  ),
+  (
+    'whatsapp_notifications',
+    'Notificações por WhatsApp',
+    'Reserva o direito comercial a integrações via WhatsApp.'
+  ),
+  (
+    'advanced_reports',
+    'Relatórios avançados',
+    'Permite relatórios avançados do tenant.'
+  ),
+  (
+    'custom_domain',
+    'Domínio personalizado',
+    'Permite domínio próprio para o tenant.'
+  )
+on conflict (code) do update set
+  name = excluded.name,
+  description = excluded.description,
+  updated_at = now();
+
+-- Eu migro o comportamento atual de plans.features para a estrutura normalizada.
+-- Isso preserva os direitos dos planos atuais sem depender do JSON no futuro.
+insert into public.plan_features (
+  plan_id,
+  feature_id,
+  enabled
+)
+select
+  p.id,
+  f.id,
+  case f.code
+    when 'loyalty'
+      then coalesce((p.features ->> 'loyalty')::boolean, false)
+    when 'satisfaction_survey'
+      then coalesce((p.features ->> 'feedback')::boolean, false)
+    when 'birthday_notifications'
+      then coalesce((p.features ->> 'email')::boolean, false)
+    when 'email_notifications'
+      then coalesce((p.features ->> 'email')::boolean, false)
+    when 'whatsapp_notifications'
+      then coalesce((p.features ->> 'whatsapp')::boolean, false)
+    when 'advanced_reports'
+      then coalesce((p.features ->> 'advanced_reports')::boolean, false)
+    when 'custom_domain'
+      then coalesce((p.features ->> 'custom_domain')::boolean, false)
+    else false
+  end
+from public.plans p
+cross join public.platform_features f
+on conflict (plan_id, feature_id) do nothing;
+
+-- ================================================================
+-- 3. AUDITORIA EXCLUSIVA DA PLATAFORMA
+-- ================================================================
+
+create table if not exists public.platform_audit_logs (
+  id bigint generated always as identity primary key,
+  actor_id uuid
+    references public.profiles(id)
+    on delete set null,
+  actor_email_snapshot text,
+  barbershop_id uuid
+    references public.barbershops(id)
+    on delete set null,
+  entity_type text not null,
+  entity_id text,
+  action text not null,
+  old_data jsonb,
+  new_data jsonb,
+  reason text,
+  support_session_id uuid,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists platform_audit_logs_tenant_date_idx
+  on public.platform_audit_logs (
+    barbershop_id,
+    created_at desc
+  );
+
+create index if not exists platform_audit_logs_actor_date_idx
+  on public.platform_audit_logs (
+    actor_id,
+    created_at desc
+  );
+
+-- ================================================================
+-- 4. MODO SUPORTE TEMPORÁRIO
+-- ================================================================
+
+create table if not exists public.platform_support_sessions (
+  id uuid primary key default gen_random_uuid(),
+  platform_admin_id uuid not null
+    references public.profiles(id)
+    on delete cascade,
+  barbershop_id uuid not null
+    references public.barbershops(id)
+    on delete cascade,
+  reason text not null
+    check (char_length(trim(reason)) between 5 and 500),
+  ticket_reference text,
+  scopes text[] not null,
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  closed_at timestamptz,
+  closed_reason text,
+  constraint platform_support_scopes_check
+    check (
+      cardinality(scopes) > 0
+      and scopes <@ array[
+        'schedule_read',
+        'customer_summary_read',
+        'customer_contact_read',
+        'payment_read',
+        'settings_read'
+      ]::text[]
+    ),
+  constraint platform_support_expiration_check
+    check (
+      expires_at > created_at
+      and expires_at <= created_at + interval '30 minutes'
+    )
+);
+
+create index if not exists platform_support_sessions_active_idx
+  on public.platform_support_sessions (
+    platform_admin_id,
+    barbershop_id,
+    expires_at
+  )
+  where closed_at is null;
+
+-- ================================================================
+-- 5. RLS DAS ESTRUTURAS DA PLATAFORMA
+-- ================================================================
+
+alter table public.platform_features enable row level security;
+alter table public.plan_features enable row level security;
+alter table public.barbershop_feature_overrides enable row level security;
+alter table public.platform_audit_logs enable row level security;
+alter table public.platform_support_sessions enable row level security;
+
+revoke all on public.platform_features
+  from public, anon, authenticated;
+revoke all on public.plan_features
+  from public, anon, authenticated;
+revoke all on public.barbershop_feature_overrides
+  from public, anon, authenticated;
+revoke all on public.platform_audit_logs
+  from public, anon, authenticated;
+revoke all on public.platform_support_sessions
+  from public, anon, authenticated;
+
+grant select on public.platform_features to authenticated;
+grant select on public.plan_features to authenticated;
+grant select on public.barbershop_feature_overrides to authenticated;
+grant select on public.platform_audit_logs to authenticated;
+grant select on public.platform_support_sessions to authenticated;
+
+drop policy if exists platform_features_platform_read
+  on public.platform_features;
+create policy platform_features_platform_read
+  on public.platform_features
+  for select
+  using (public.is_platform_admin());
+
+drop policy if exists plan_features_platform_read
+  on public.plan_features;
+create policy plan_features_platform_read
+  on public.plan_features
+  for select
+  using (public.is_platform_admin());
+
+drop policy if exists feature_overrides_platform_read
+  on public.barbershop_feature_overrides;
+create policy feature_overrides_platform_read
+  on public.barbershop_feature_overrides
+  for select
+  using (public.is_platform_admin());
+
+drop policy if exists platform_audit_logs_platform_read
+  on public.platform_audit_logs;
+create policy platform_audit_logs_platform_read
+  on public.platform_audit_logs
+  for select
+  using (public.is_platform_admin());
+
+drop policy if exists platform_support_sessions_platform_read
+  on public.platform_support_sessions;
+create policy platform_support_sessions_platform_read
+  on public.platform_support_sessions
+  for select
+  using (
+    public.is_platform_admin()
+    and platform_admin_id = auth.uid()
+  );
+
+-- Subscription passa a ser dado comercial da plataforma.
+-- Owner/manager não lê/escreve a tabela diretamente.
+drop policy if exists subscriptions_manager_read
+  on public.subscriptions;
+drop policy if exists subscriptions_platform_manage
+  on public.subscriptions;
+drop policy if exists subscriptions_platform_read
+  on public.subscriptions;
+
+create policy subscriptions_platform_read
+  on public.subscriptions
+  for select
+  using (public.is_platform_admin());
+
+revoke insert, update, delete
+  on public.subscriptions
+  from public, anon, authenticated;
+
+grant select
+  on public.subscriptions
+  to authenticated;
+
+-- ================================================================
+-- 6. SEPARAÇÃO REAL: PLATFORM ADMIN != TENANT ADMIN
+-- ================================================================
+
+create or replace function public.can_manage_barbershop(
+  target_barbershop uuid
+)
+returns boolean
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select
+    public.is_password_session()
+    and exists (
+      select 1
+      from public.barbershop_members m
+      join public.profiles p
+        on p.id = m.profile_id
+      join public.barbershops b
+        on b.id = m.barbershop_id
+      where m.barbershop_id = target_barbershop
+        and m.profile_id = auth.uid()
+        and m.role in ('owner', 'manager')
+        and m.is_active = true
+        and p.is_active = true
+        and b.is_active = true
+        and b.archived_at is null
+    );
+$$;
+
+-- Platform Admin também deixa de ter leitura global de profiles.
+-- Owner/manager pode ler apenas perfis que também são membros do mesmo tenant.
+drop policy if exists profiles_select_scope
+  on public.profiles;
+
+create policy profiles_select_scope
+  on public.profiles
+  for select
+  using (
+    id = auth.uid()
+    or exists (
+      select 1
+      from public.barbershop_members me
+      join public.barbershop_members target_member
+        on target_member.barbershop_id = me.barbershop_id
+      where me.profile_id = auth.uid()
+        and me.role in ('owner', 'manager')
+        and me.is_active = true
+        and target_member.profile_id = profiles.id
+        and target_member.is_active = true
+    )
+  );
+
+drop policy if exists profiles_update_own_contact
+  on public.profiles;
+
+create policy profiles_update_own_contact
+  on public.profiles
+  for update
+  using (id = auth.uid())
+  with check (id = auth.uid());
+
+-- ================================================================
+-- 7. FUNÇÕES INTERNAS DE AUDITORIA
+-- ================================================================
+
+create or replace function public.write_platform_audit(
+  target_barbershop_id uuid,
+  target_entity_type text,
+  target_entity_id text,
+  target_action text,
+  target_old_data jsonb default null,
+  target_new_data jsonb default null,
+  target_reason text default null,
+  target_support_session_id uuid default null,
+  target_metadata jsonb default '{}'::jsonb
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  actor_email text;
+begin
+  if not public.is_platform_admin() then
+    raise exception 'FORBIDDEN';
+  end if;
+
+  select p.email
+  into actor_email
+  from public.profiles p
+  where p.id = auth.uid();
+
+  insert into public.platform_audit_logs (
+    actor_id,
+    actor_email_snapshot,
+    barbershop_id,
+    entity_type,
+    entity_id,
+    action,
+    old_data,
+    new_data,
+    reason,
+    support_session_id,
+    metadata
+  )
+  values (
+    auth.uid(),
+    actor_email,
+    target_barbershop_id,
+    target_entity_type,
+    target_entity_id,
+    target_action,
+    target_old_data,
+    target_new_data,
+    nullif(trim(target_reason), ''),
+    target_support_session_id,
+    coalesce(target_metadata, '{}'::jsonb)
+  );
+end;
+$$;
+
+revoke all on function public.write_platform_audit(
+  uuid,
+  text,
+  text,
+  text,
+  jsonb,
+  jsonb,
+  text,
+  uuid,
+  jsonb
+) from public, anon, authenticated;
+
+-- ================================================================
+-- 8. FEATURE FLAGS EFETIVAS
+-- ================================================================
+
+create or replace function public.is_barbershop_feature_enabled(
+  target_barbershop_id uuid,
+  target_feature_code text
+)
+returns boolean
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select coalesce(
+    (
+      select o.enabled
+      from public.barbershop_feature_overrides o
+      join public.platform_features f
+        on f.id = o.feature_id
+      where o.barbershop_id = target_barbershop_id
+        and f.code = target_feature_code
+        and f.is_active = true
+      limit 1
+    ),
+    (
+      select pf.enabled
+      from public.subscriptions s
+      join public.plan_features pf
+        on pf.plan_id = s.plan_id
+      join public.platform_features f
+        on f.id = pf.feature_id
+      where s.barbershop_id = target_barbershop_id
+        and f.code = target_feature_code
+        and f.is_active = true
+      limit 1
+    ),
+    false
+  );
+$$;
+
+revoke all on function public.is_barbershop_feature_enabled(
+  uuid,
+  text
+) from public;
+
+grant execute on function public.is_barbershop_feature_enabled(
+  uuid,
+  text
+) to anon, authenticated;
+
+create or replace function public.platform_set_feature_override(
+  target_barbershop_id uuid,
+  target_feature_code text,
+  target_enabled boolean,
+  target_reason text default null
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  feature_record public.platform_features%rowtype;
+  previous_record public.barbershop_feature_overrides%rowtype;
+begin
+  if not public.is_platform_admin() then
+    raise exception 'FORBIDDEN';
+  end if;
+
+  select *
+  into feature_record
+  from public.platform_features
+  where code = target_feature_code
+    and is_active = true;
+
+  if not found then
+    raise exception 'FEATURE_NOT_FOUND';
+  end if;
+
+  if not exists (
+    select 1
+    from public.barbershops
+    where id = target_barbershop_id
+  ) then
+    raise exception 'BARBERSHOP_NOT_FOUND';
+  end if;
+
+  select *
+  into previous_record
+  from public.barbershop_feature_overrides
+  where barbershop_id = target_barbershop_id
+    and feature_id = feature_record.id;
+
+  insert into public.barbershop_feature_overrides (
+    barbershop_id,
+    feature_id,
+    enabled,
+    reason,
+    updated_by
+  )
+  values (
+    target_barbershop_id,
+    feature_record.id,
+    target_enabled,
+    nullif(trim(target_reason), ''),
+    auth.uid()
+  )
+  on conflict (barbershop_id, feature_id)
+  do update set
+    enabled = excluded.enabled,
+    reason = excluded.reason,
+    updated_by = excluded.updated_by,
+    updated_at = now();
+
+  perform public.write_platform_audit(
+    target_barbershop_id,
+    'barbershop_feature_override',
+    feature_record.id::text,
+    case
+      when target_enabled then 'FEATURE_ENABLED'
+      else 'FEATURE_DISABLED'
+    end,
+    case
+      when previous_record.barbershop_id is null then null
+      else to_jsonb(previous_record)
+    end,
+    jsonb_build_object(
+      'feature_code',
+      feature_record.code,
+      'enabled',
+      target_enabled
+    ),
+    target_reason
+  );
+end;
+$$;
+
+revoke all on function public.platform_set_feature_override(
+  uuid,
+  text,
+  boolean,
+  text
+) from public, anon;
+
+grant execute on function public.platform_set_feature_override(
+  uuid,
+  text,
+  boolean,
+  text
+) to authenticated;
+
+create or replace function public.platform_clear_feature_override(
+  target_barbershop_id uuid,
+  target_feature_code text,
+  target_reason text default null
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  feature_record public.platform_features%rowtype;
+  previous_record public.barbershop_feature_overrides%rowtype;
+begin
+  if not public.is_platform_admin() then
+    raise exception 'FORBIDDEN';
+  end if;
+
+  select *
+  into feature_record
+  from public.platform_features
+  where code = target_feature_code;
+
+  if not found then
+    raise exception 'FEATURE_NOT_FOUND';
+  end if;
+
+  select *
+  into previous_record
+  from public.barbershop_feature_overrides
+  where barbershop_id = target_barbershop_id
+    and feature_id = feature_record.id;
+
+  delete from public.barbershop_feature_overrides
+  where barbershop_id = target_barbershop_id
+    and feature_id = feature_record.id;
+
+  if found then
+    perform public.write_platform_audit(
+      target_barbershop_id,
+      'barbershop_feature_override',
+      feature_record.id::text,
+      'FEATURE_OVERRIDE_CLEARED',
+      to_jsonb(previous_record),
+      jsonb_build_object(
+        'feature_code',
+        feature_record.code,
+        'source',
+        'plan'
+      ),
+      target_reason
+    );
+  end if;
+end;
+$$;
+
+revoke all on function public.platform_clear_feature_override(
+  uuid,
+  text,
+  text
+) from public, anon;
+
+grant execute on function public.platform_clear_feature_override(
+  uuid,
+  text,
+  text
+) to authenticated;
+
+-- ================================================================
+-- 9. RESUMO COMERCIAL PARA OWNER/MANAGER
+-- ================================================================
+
+create or replace function public.get_my_subscription_summary(
+  target_barbershop_id uuid
+)
+returns table (
+  plan_code text,
+  plan_name text,
+  status text,
+  trial_started_at timestamptz,
+  trial_ends_at timestamptz,
+  activated_at timestamptz,
+  suspended_at timestamptz,
+  canceled_at timestamptz,
+  expires_at timestamptz
+)
+language plpgsql
+security definer
+stable
+set search_path = public
+as $$
+begin
+  if not public.can_manage_barbershop(target_barbershop_id) then
+    raise exception 'FORBIDDEN';
+  end if;
+
+  return query
+  select
+    p.code,
+    p.name,
+    s.status::text,
+    s.trial_started_at,
+    s.trial_ends_at,
+    s.activated_at,
+    s.suspended_at,
+    s.canceled_at,
+    s.expires_at
+  from public.subscriptions s
+  join public.plans p
+    on p.id = s.plan_id
+  where s.barbershop_id = target_barbershop_id;
+end;
+$$;
+
+revoke all on function public.get_my_subscription_summary(
+  uuid
+) from public, anon;
+
+grant execute on function public.get_my_subscription_summary(
+  uuid
+) to authenticated;
+
+-- ================================================================
+-- 10. OPERAÇÕES COMERCIAIS AUDITADAS
+-- ================================================================
+
+create or replace function public.platform_change_subscription(
+  target_barbershop_id uuid,
+  target_plan_id uuid,
+  target_status public.subscription_status,
+  target_reason text default null
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  old_record public.subscriptions%rowtype;
+  new_record public.subscriptions%rowtype;
+begin
+  if not public.is_platform_admin() then
+    raise exception 'FORBIDDEN';
+  end if;
+
+  if target_status in ('suspended', 'canceled')
+     and char_length(trim(coalesce(target_reason, ''))) < 5 then
+    raise exception 'REASON_REQUIRED';
+  end if;
+
+  select *
+  into old_record
+  from public.subscriptions
+  where barbershop_id = target_barbershop_id
+  for update;
+
+  if not found then
+    raise exception 'SUBSCRIPTION_NOT_FOUND';
+  end if;
+
+  if not exists (
+    select 1
+    from public.plans
+    where id = target_plan_id
+      and is_active = true
+  ) then
+    raise exception 'PLAN_NOT_FOUND';
+  end if;
+
+  update public.subscriptions
+  set
+    plan_id = target_plan_id,
+    status = target_status,
+    activated_at = case
+      when target_status = 'active'
+        then coalesce(activated_at, now())
+      else activated_at
+    end,
+    suspended_at = case
+      when target_status = 'suspended'
+        then now()
+      when old_record.status = 'suspended'
+        then null
+      else suspended_at
+    end,
+    canceled_at = case
+      when target_status = 'canceled'
+        then now()
+      else canceled_at
+    end,
+    suspension_reason = case
+      when target_status = 'suspended'
+        then nullif(trim(target_reason), '')
+      when old_record.status = 'suspended'
+        then null
+      else suspension_reason
+    end,
+    cancellation_reason = case
+      when target_status = 'canceled'
+        then nullif(trim(target_reason), '')
+      else cancellation_reason
+    end,
+    status_changed_at = now(),
+    updated_at = now()
+  where barbershop_id = target_barbershop_id
+  returning *
+  into new_record;
+
+  perform public.write_platform_audit(
+    target_barbershop_id,
+    'subscription',
+    new_record.id::text,
+    'SUBSCRIPTION_CHANGED',
+    to_jsonb(old_record),
+    to_jsonb(new_record),
+    target_reason
+  );
+end;
+$$;
+
+revoke all on function public.platform_change_subscription(
+  uuid,
+  uuid,
+  public.subscription_status,
+  text
+) from public, anon;
+
+grant execute on function public.platform_change_subscription(
+  uuid,
+  uuid,
+  public.subscription_status,
+  text
+) to authenticated;
+
+create or replace function public.platform_set_ui_version(
+  target_barbershop_id uuid,
+  target_ui_version text,
+  target_reason text default null
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  old_version text;
+begin
+  if not public.is_platform_admin() then
+    raise exception 'FORBIDDEN';
+  end if;
+
+  if target_ui_version not in ('legacy', 'warm-premium') then
+    raise exception 'INVALID_UI_VERSION';
+  end if;
+
+  select ui_version
+  into old_version
+  from public.barbershops
+  where id = target_barbershop_id
+  for update;
+
+  if not found then
+    raise exception 'BARBERSHOP_NOT_FOUND';
+  end if;
+
+  update public.barbershops
+  set
+    ui_version = target_ui_version,
+    updated_at = now()
+  where id = target_barbershop_id;
+
+  perform public.write_platform_audit(
+    target_barbershop_id,
+    'barbershop',
+    target_barbershop_id::text,
+    'UI_VERSION_CHANGED',
+    jsonb_build_object('ui_version', old_version),
+    jsonb_build_object('ui_version', target_ui_version),
+    target_reason
+  );
+end;
+$$;
+
+revoke all on function public.platform_set_ui_version(
+  uuid,
+  text,
+  text
+) from public, anon;
+
+grant execute on function public.platform_set_ui_version(
+  uuid,
+  text,
+  text
+) to authenticated;
+
+-- ================================================================
+-- 11. MODO SUPORTE: ABRIR / FECHAR / VALIDAR ESCOPO
+-- ================================================================
+
+create or replace function public.platform_open_support_session(
+  target_barbershop_id uuid,
+  target_reason text,
+  target_ticket_reference text,
+  target_scopes text[],
+  duration_minutes integer default 30
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  new_session_id uuid;
+  expires timestamp with time zone;
+begin
+  if not public.is_platform_admin() then
+    raise exception 'FORBIDDEN';
+  end if;
+
+  if char_length(trim(coalesce(target_reason, ''))) < 5 then
+    raise exception 'REASON_REQUIRED';
+  end if;
+
+  if duration_minutes not between 5 and 30 then
+    raise exception 'INVALID_DURATION';
+  end if;
+
+  if target_scopes is null
+     or cardinality(target_scopes) = 0
+     or not (
+       target_scopes <@ array[
+         'schedule_read',
+         'customer_summary_read',
+         'customer_contact_read',
+         'payment_read',
+         'settings_read'
+       ]::text[]
+     ) then
+    raise exception 'INVALID_SCOPE';
+  end if;
+
+  if not exists (
+    select 1
+    from public.barbershops
+    where id = target_barbershop_id
+      and archived_at is null
+  ) then
+    raise exception 'BARBERSHOP_NOT_FOUND';
+  end if;
+
+  -- Eu encerro sessões antigas do mesmo operador/tenant antes de abrir outra.
+  update public.platform_support_sessions
+  set
+    closed_at = now(),
+    closed_reason = 'Substituída por uma nova sessão de suporte.'
+  where platform_admin_id = auth.uid()
+    and barbershop_id = target_barbershop_id
+    and closed_at is null
+    and expires_at > now();
+
+  expires := now() + make_interval(mins => duration_minutes);
+
+  insert into public.platform_support_sessions (
+    platform_admin_id,
+    barbershop_id,
+    reason,
+    ticket_reference,
+    scopes,
+    expires_at
+  )
+  values (
+    auth.uid(),
+    target_barbershop_id,
+    trim(target_reason),
+    nullif(trim(target_ticket_reference), ''),
+    target_scopes,
+    expires
+  )
+  returning id
+  into new_session_id;
+
+  perform public.write_platform_audit(
+    target_barbershop_id,
+    'platform_support_session',
+    new_session_id::text,
+    'SUPPORT_SESSION_OPENED',
+    null,
+    jsonb_build_object(
+      'scopes',
+      target_scopes,
+      'expires_at',
+      expires,
+      'ticket_reference',
+      nullif(trim(target_ticket_reference), '')
+    ),
+    target_reason,
+    new_session_id
+  );
+
+  return new_session_id;
+end;
+$$;
+
+revoke all on function public.platform_open_support_session(
+  uuid,
+  text,
+  text,
+  text[],
+  integer
+) from public, anon;
+
+grant execute on function public.platform_open_support_session(
+  uuid,
+  text,
+  text,
+  text[],
+  integer
+) to authenticated;
+
+create or replace function public.platform_close_support_session(
+  target_support_session_id uuid,
+  target_reason text default 'Encerrada manualmente.'
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  support_record public.platform_support_sessions%rowtype;
+begin
+  if not public.is_platform_admin() then
+    raise exception 'FORBIDDEN';
+  end if;
+
+  select *
+  into support_record
+  from public.platform_support_sessions
+  where id = target_support_session_id
+    and platform_admin_id = auth.uid()
+  for update;
+
+  if not found then
+    raise exception 'SUPPORT_SESSION_NOT_FOUND';
+  end if;
+
+  update public.platform_support_sessions
+  set
+    closed_at = coalesce(closed_at, now()),
+    closed_reason = coalesce(
+      closed_reason,
+      nullif(trim(target_reason), ''),
+      'Encerrada manualmente.'
+    )
+  where id = target_support_session_id;
+
+  perform public.write_platform_audit(
+    support_record.barbershop_id,
+    'platform_support_session',
+    support_record.id::text,
+    'SUPPORT_SESSION_CLOSED',
+    to_jsonb(support_record),
+    jsonb_build_object(
+      'closed_at',
+      now()
+    ),
+    target_reason,
+    support_record.id
+  );
+end;
+$$;
+
+revoke all on function public.platform_close_support_session(
+  uuid,
+  text
+) from public, anon;
+
+grant execute on function public.platform_close_support_session(
+  uuid,
+  text
+) to authenticated;
+
+create or replace function public.has_active_platform_support_scope(
+  target_barbershop_id uuid,
+  required_scope text
+)
+returns boolean
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select
+    public.is_platform_admin()
+    and exists (
+      select 1
+      from public.platform_support_sessions s
+      where s.platform_admin_id = auth.uid()
+        and s.barbershop_id = target_barbershop_id
+        and s.closed_at is null
+        and s.expires_at > now()
+        and required_scope = any(s.scopes)
+    );
+$$;
+
+revoke all on function public.has_active_platform_support_scope(
+  uuid,
+  text
+) from public, anon;
+
+grant execute on function public.has_active_platform_support_scope(
+  uuid,
+  text
+) to authenticated;
+
+-- ================================================================
+-- 12. LEITURAS DE SUPORTE: SEM IMPERSONAÇÃO
+-- ================================================================
+
+create or replace function public.platform_support_list_appointments(
+  target_barbershop_id uuid,
+  range_start timestamptz,
+  range_end timestamptz
+)
+returns table (
+  appointment_id uuid,
+  start_at timestamptz,
+  end_at timestamptz,
+  status text,
+  customer_id uuid,
+  customer_name text,
+  barber_name text,
+  service_name text,
+  public_reference text
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  support_session uuid;
+begin
+  if not public.has_active_platform_support_scope(
+    target_barbershop_id,
+    'schedule_read'
+  ) then
+    raise exception 'SUPPORT_SCOPE_REQUIRED';
+  end if;
+
+  if range_start is null
+     or range_end is null
+     or range_end <= range_start
+     or range_end > range_start + interval '31 days' then
+    raise exception 'INVALID_RANGE';
+  end if;
+
+  select s.id
+  into support_session
+  from public.platform_support_sessions s
+  where s.platform_admin_id = auth.uid()
+    and s.barbershop_id = target_barbershop_id
+    and s.closed_at is null
+    and s.expires_at > now()
+    and 'schedule_read' = any(s.scopes)
+  order by s.created_at desc
+  limit 1;
+
+  perform public.write_platform_audit(
+    target_barbershop_id,
+    'support_query',
+    null,
+    'SUPPORT_SCHEDULE_VIEWED',
+    null,
+    null,
+    null,
+    support_session,
+    jsonb_build_object(
+      'range_start',
+      range_start,
+      'range_end',
+      range_end
+    )
+  );
+
+  return query
+  select
+    a.id,
+    a.start_at,
+    a.end_at,
+    a.status::text,
+    c.id,
+    c.full_name,
+    b.name,
+    sv.name,
+    a.public_reference
+  from public.appointments a
+  join public.customers c
+    on c.id = a.customer_id
+    and c.barbershop_id = a.barbershop_id
+  join public.barbers b
+    on b.id = a.barber_id
+    and b.barbershop_id = a.barbershop_id
+  join public.services sv
+    on sv.id = a.service_id
+    and sv.barbershop_id = a.barbershop_id
+  where a.barbershop_id = target_barbershop_id
+    and a.start_at >= range_start
+    and a.start_at < range_end
+  order by a.start_at;
+end;
+$$;
+
+revoke all on function public.platform_support_list_appointments(
+  uuid,
+  timestamptz,
+  timestamptz
+) from public, anon;
+
+grant execute on function public.platform_support_list_appointments(
+  uuid,
+  timestamptz,
+  timestamptz
+) to authenticated;
+
+create or replace function public.platform_support_get_customer_contact(
+  target_barbershop_id uuid,
+  target_customer_id uuid
+)
+returns table (
+  customer_id uuid,
+  full_name text,
+  email text,
+  phone text
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  support_session uuid;
+begin
+  if not public.has_active_platform_support_scope(
+    target_barbershop_id,
+    'customer_contact_read'
+  ) then
+    raise exception 'SUPPORT_SCOPE_REQUIRED';
+  end if;
+
+  select s.id
+  into support_session
+  from public.platform_support_sessions s
+  where s.platform_admin_id = auth.uid()
+    and s.barbershop_id = target_barbershop_id
+    and s.closed_at is null
+    and s.expires_at > now()
+    and 'customer_contact_read' = any(s.scopes)
+  order by s.created_at desc
+  limit 1;
+
+  if not exists (
+    select 1
+    from public.customers
+    where id = target_customer_id
+      and barbershop_id = target_barbershop_id
+  ) then
+    raise exception 'CUSTOMER_NOT_FOUND';
+  end if;
+
+  perform public.write_platform_audit(
+    target_barbershop_id,
+    'customer',
+    target_customer_id::text,
+    'SUPPORT_CUSTOMER_CONTACT_VIEWED',
+    null,
+    null,
+    null,
+    support_session
+  );
+
+  return query
+  select
+    c.id,
+    c.full_name,
+    c.email,
+    c.phone
+  from public.customers c
+  where c.id = target_customer_id
+    and c.barbershop_id = target_barbershop_id;
+end;
+$$;
+
+revoke all on function public.platform_support_get_customer_contact(
+  uuid,
+  uuid
+) from public, anon;
+
+grant execute on function public.platform_support_get_customer_contact(
+  uuid,
+  uuid
+) to authenticated;
+
+-- ================================================================
+-- 13. ONBOARDING NOVO: TRIAL 15 DIAS, SEM ALTERAR EXISTENTES
+-- ================================================================
+
+create or replace function public.create_barbershop_with_owner(
+  barbershop_name text,
+  barbershop_slug text,
+  owner_email text,
+  existing_organization_id uuid default null
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  owner_profile public.profiles%rowtype;
+  organization_id uuid;
+  new_barbershop_id uuid;
+  starter_plan_id uuid;
+  new_subscription_id uuid;
+  trial_start timestamptz := now();
+  trial_end timestamptz := now() + interval '15 days';
+begin
+  if not public.is_platform_admin() then
+    raise exception 'FORBIDDEN';
+  end if;
+
+  if barbershop_name is null
+     or char_length(trim(barbershop_name)) not between 2 and 100
+     or barbershop_slug is null
+     or length(barbershop_slug) > 60
+     or barbershop_slug in (
+       'admin',
+       'api',
+       'auth',
+       'plataforma',
+       'avaliar',
+       'login',
+       'reservar',
+       'cliente',
+       'completar-cadastro'
+     )
+     or barbershop_slug !~ '^[a-z0-9]+(?:-[a-z0-9]+)*$' then
+    raise exception 'INVALID_DATA';
+  end if;
+
+  select p.*
+  into owner_profile
+  from public.profiles p
+  join auth.users u
+    on u.id = p.id
+  where lower(u.email) = lower(trim(owner_email))
+    and p.is_active = true;
+
+  if not found then
+    raise exception 'OWNER_NOT_FOUND';
+  end if;
+
+  if coalesce(owner_profile.is_platform_admin, false) then
+    raise exception 'OWNER_PLATFORM_ADMIN_CONFLICT';
+  end if;
+
+  if existing_organization_id is null then
+    insert into public.organizations (
+      name,
+      owner_profile_id
+    )
+    values (
+      trim(barbershop_name),
+      owner_profile.id
+    )
+    returning id
+    into organization_id;
+  else
+    select id
+    into organization_id
+    from public.organizations
+    where id = existing_organization_id
+      and owner_profile_id = owner_profile.id;
+
+    if not found then
+      raise exception 'ORGANIZATION_OWNER_MISMATCH';
+    end if;
+  end if;
+
+  insert into public.barbershops (
+    organization_id,
+    name,
+    slug,
+    primary_color,
+    secondary_color,
+    ui_version
+  )
+  values (
+    organization_id,
+    trim(barbershop_name),
+    barbershop_slug,
+    '#B8873F',
+    '#000000',
+    'warm-premium'
+  )
+  returning id
+  into new_barbershop_id;
+
+  update public.profiles
+  set
+    role = 'admin',
+    updated_at = now()
+  where id = owner_profile.id;
+
+  insert into public.barbershop_members (
+    barbershop_id,
+    profile_id,
+    role
+  )
+  values (
+    new_barbershop_id,
+    owner_profile.id,
+    'owner'
+  );
+
+  insert into public.business_settings (
+    barbershop_id,
+    business_name,
+    primary_color,
+    secondary_color
+  )
+  values (
+    new_barbershop_id,
+    trim(barbershop_name),
+    '#B8873F',
+    '#000000'
+  );
+
+  insert into public.loyalty_programs (
+    barbershop_id,
+    name
+  )
+  values (
+    new_barbershop_id,
+    'Clube ' || trim(barbershop_name)
+  );
+
+  insert into public.notification_settings (
+    barbershop_id
+  )
+  values (
+    new_barbershop_id
+  );
+
+  insert into public.message_templates (
+    barbershop_id,
+    type,
+    channel,
+    subject,
+    content
+  )
+  values
+    (
+      new_barbershop_id,
+      'birthday',
+      'email',
+      'Feliz aniversário, {{nome}}!',
+      'Parabéns, {{nome}}! A equipe da {{barbearia}} deseja um excelente aniversário.'
+    ),
+    (
+      new_barbershop_id,
+      'satisfaction_survey',
+      'email',
+      'Como foi seu atendimento?',
+      'Olá, {{nome}}! Conte como foi seu atendimento na {{barbearia}}: {{link_avaliacao}}'
+    );
+
+  select id
+  into starter_plan_id
+  from public.plans
+  where code = 'starter'
+    and is_active = true;
+
+  if starter_plan_id is null then
+    raise exception 'STARTER_PLAN_NOT_FOUND';
+  end if;
+
+  insert into public.subscriptions (
+    barbershop_id,
+    plan_id,
+    status,
+    trial_started_at,
+    trial_ends_at,
+    started_at,
+    status_changed_at
+  )
+  values (
+    new_barbershop_id,
+    starter_plan_id,
+    'trial',
+    trial_start,
+    trial_end,
+    trial_start,
+    trial_start
+  )
+  returning id
+  into new_subscription_id;
+
+  perform public.write_platform_audit(
+    new_barbershop_id,
+    'barbershop',
+    new_barbershop_id::text,
+    'TENANT_CREATED',
+    null,
+    jsonb_build_object(
+      'name',
+      trim(barbershop_name),
+      'slug',
+      barbershop_slug,
+      'owner_profile_id',
+      owner_profile.id,
+      'subscription_id',
+      new_subscription_id,
+      'trial_started_at',
+      trial_start,
+      'trial_ends_at',
+      trial_end
+    ),
+    'Onboarding de nova barbearia.'
+  );
+
+  return new_barbershop_id;
+end;
+$$;
+
+revoke all on function public.create_barbershop_with_owner(
+  text,
+  text,
+  text,
+  uuid
+) from public, anon;
+
+grant execute on function public.create_barbershop_with_owner(
+  text,
+  text,
+  text,
+  uuid
+) to authenticated;
+
+commit;
+
+==== supabase/migrations/027_audit_fixes_rollout_and_sessions.sql ====
+-- 027_audit_fixes_rollout_and_sessions.sql
+--
+-- Este bloco fecha dois pontos da auditoria antes de novos tenants:
+-- 1. rollback visual individual por barbearia;
+-- 2. expiração por inatividade validada no servidor por sessão.
+--
+-- O rollback continua sendo somente de UI. Regras de negócio, RLS,
+-- reservas e correções de segurança não são revertidas.
+
+begin;
+
+-- ================================================================
+-- 1. ROLLOUT / ROLLBACK INDIVIDUAL POR TENANT
+-- ================================================================
+
+alter table public.barbershops
+  add column if not exists ui_version text not null default 'warm-premium';
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'barbershops_ui_version_check'
+      and conrelid = 'public.barbershops'::regclass
+  ) then
+    alter table public.barbershops
+      add constraint barbershops_ui_version_check
+      check (ui_version in ('legacy', 'warm-premium'));
+  end if;
+end;
+$$;
+
+comment on column public.barbershops.ui_version is
+  'Versão visual do tenant. Permite rollback individual sem afetar outras barbearias.';
+
+-- Tenants que já estavam aprovados em Warm Premium permanecem no padrão.
+update public.barbershops
+set ui_version = 'warm-premium'
+where ui_version is null;
+
+-- ================================================================
+-- 2. SESSÃO DA APLICAÇÃO COM INATIVIDADE REAL DE 30 MINUTOS
+-- ================================================================
+--
+-- O Supabase mantém um session_id estável no JWT durante os refreshes.
+-- Eu uso esse identificador para controlar atividade humana por sessão,
+-- e não apenas por usuário. Assim, dois navegadores/dispositivos não
+-- renovam a sessão um do outro.
+
+create table if not exists public.app_session_activity (
+  session_id uuid primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  last_activity_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists app_session_activity_user_idx
+  on public.app_session_activity(user_id, last_activity_at desc);
+
+alter table public.app_session_activity enable row level security;
+
+-- A tabela não é acessada diretamente pelo navegador.
+-- Somente as funções SECURITY DEFINER abaixo podem consultá-la/alterá-la.
+revoke all on table public.app_session_activity from public, anon, authenticated;
+
+-- Esta função é chamada pelo servidor em requests autenticados.
+-- Se a sessão ainda não possui registro (primeiro request após login ou
+-- primeiro request após esta migration), eu a inicializo uma única vez.
+-- Um registro expirado nunca é renovado por esta função.
+create or replace function public.check_current_app_session()
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_session_id uuid;
+  current_user_id uuid;
+  last_activity timestamptz;
+begin
+  current_user_id := auth.uid();
+
+  if current_user_id is null then
+    return false;
+  end if;
+
+  current_session_id := nullif(
+    auth.jwt() ->> 'session_id',
+    ''
+  )::uuid;
+
+  if current_session_id is null then
+    return false;
+  end if;
+
+  insert into public.app_session_activity (
+    session_id,
+    user_id,
+    last_activity_at,
+    created_at,
+    updated_at
+  )
+  values (
+    current_session_id,
+    current_user_id,
+    now(),
+    now(),
+    now()
+  )
+  on conflict (session_id) do nothing;
+
+  select asa.last_activity_at
+  into last_activity
+  from public.app_session_activity asa
+  where asa.session_id = current_session_id
+    and asa.user_id = current_user_id;
+
+  if not found then
+    return false;
+  end if;
+
+  return last_activity > now() - interval '30 minutes';
+end;
+$$;
+
+revoke all
+on function public.check_current_app_session()
+from public, anon;
+
+grant execute
+on function public.check_current_app_session()
+to authenticated;
+
+-- O heartbeat só consegue atualizar uma sessão que ainda está ativa.
+-- Isso impede que um request tardio "ressuscite" uma sessão que já passou
+-- dos 30 minutos de inatividade.
+create or replace function public.touch_current_app_session()
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_session_id uuid;
+  current_user_id uuid;
+  affected_rows integer := 0;
+begin
+  current_user_id := auth.uid();
+
+  if current_user_id is null then
+    return false;
+  end if;
+
+  current_session_id := nullif(
+    auth.jwt() ->> 'session_id',
+    ''
+  )::uuid;
+
+  if current_session_id is null then
+    return false;
+  end if;
+
+  update public.app_session_activity
+  set
+    last_activity_at = now(),
+    updated_at = now()
+  where session_id = current_session_id
+    and user_id = current_user_id
+    and last_activity_at > now() - interval '30 minutes';
+
+  get diagnostics affected_rows = row_count;
+
+  return affected_rows = 1;
+end;
+$$;
+
+revoke all
+on function public.touch_current_app_session()
+from public, anon;
+
+grant execute
+on function public.touch_current_app_session()
+to authenticated;
+
+commit;
+
+==== supabase/verification/platform_foundation_readiness.sql ====
+-- platform_foundation_readiness.sql
+-- SOMENTE LEITURA.
+-- Valida a fundação do Platform Admin sem alterar dados.
+
+-- 1. Tabelas e RLS.
+select
+  c.relname as table_name,
+  c.relrowsecurity as rls_enabled
+from pg_class c
+join pg_namespace n
+  on n.oid = c.relnamespace
+where n.nspname = 'public'
+  and c.relname in (
+    'platform_features',
+    'plan_features',
+    'barbershop_feature_overrides',
+    'platform_audit_logs',
+    'platform_support_sessions'
+  )
+order by c.relname;
+
+-- Todos devem retornar rls_enabled = true.
+
+-- 2. can_manage_barbershop não pode mais conter is_platform_admin.
+select
+  position(
+    'is_platform_admin'
+    in pg_get_functiondef(
+      'public.can_manage_barbershop(uuid)'::regprocedure
+    )
+  ) = 0
+  as platform_admin_removed_from_can_manage;
+
+-- Esperado: true.
+
+-- 3. Objetos críticos.
+select
+  'platform_open_support_session' as check_name,
+  to_regprocedure(
+    'public.platform_open_support_session(uuid,text,text,text[],integer)'
+  ) is not null as ok
+
+union all
+
+select
+  'platform_close_support_session',
+  to_regprocedure(
+    'public.platform_close_support_session(uuid,text)'
+  ) is not null
+
+union all
+
+select
+  'platform_support_list_appointments',
+  to_regprocedure(
+    'public.platform_support_list_appointments(uuid,timestamptz,timestamptz)'
+  ) is not null
+
+union all
+
+select
+  'platform_support_get_customer_contact',
+  to_regprocedure(
+    'public.platform_support_get_customer_contact(uuid,uuid)'
+  ) is not null
+
+union all
+
+select
+  'platform_set_feature_override',
+  to_regprocedure(
+    'public.platform_set_feature_override(uuid,text,boolean,text)'
+  ) is not null
+
+union all
+
+select
+  'platform_change_subscription',
+  to_regprocedure(
+    'public.platform_change_subscription(uuid,uuid,public.subscription_status,text)'
+  ) is not null
+
+union all
+
+select
+  'platform_set_ui_version',
+  to_regprocedure(
+    'public.platform_set_ui_version(uuid,text,text)'
+  ) is not null;
+
+-- Todos devem retornar ok = true.
+
+-- 4. Owner/manager não possui privilégio SQL direto de escrita na subscription.
+select
+  has_table_privilege(
+    'authenticated',
+    'public.subscriptions',
+    'UPDATE'
+  ) as authenticated_can_update_subscriptions,
+  has_table_privilege(
+    'authenticated',
+    'public.subscriptions',
+    'INSERT'
+  ) as authenticated_can_insert_subscriptions,
+  has_table_privilege(
+    'authenticated',
+    'public.subscriptions',
+    'DELETE'
+  ) as authenticated_can_delete_subscriptions;
+
+-- Esperado: false | false | false.
+
+-- 5. Catálogo de features.
+select
+  code,
+  name,
+  is_active
+from public.platform_features
+order by code;
+
+-- 6. Trials existentes: somente inventário.
+-- Esta consulta serve para confirmar visualmente que a migration não
+-- reescreveu trial_ends_at de Sevilha/ExclusiveMen.
+select
+  b.slug,
+  s.status,
+  s.trial_started_at,
+  s.trial_ends_at,
+  s.created_at
+from public.barbershops b
+join public.subscriptions s
+  on s.barbershop_id = b.id
+order by b.created_at;
+
+==== src/features/platform/server.ts ====
+import {
+  notFound,
+  redirect,
+} from "next/navigation";
+
+import { obterAdministradorAtual } from "@/lib/auth/permissoes";
+
+/**
+ * Eu mantenho a autorização da plataforma separada da autorização do tenant.
+ *
+ * Esta função NÃO transforma o Platform Admin em owner/manager e não concede
+ * acesso ao painel operacional de nenhuma barbearia.
+ */
+export async function requirePlatformAdmin() {
+  const admin =
+    await obterAdministradorAtual();
+
+  if (!admin) {
+    redirect(
+      `/admin/login?next=${encodeURIComponent(
+        "/plataforma",
+      )}`,
+    );
+  }
+
+  if (
+    !admin.profile
+      .is_platform_admin
+  ) {
+    notFound();
+  }
+
+  return admin;
+}
+
+==== src/features/platform/actions.ts ====
+"use server";
+
+import { redirect } from "next/navigation";
+import { z } from "zod";
+
+import { requirePlatformAdmin } from "@/features/platform/server";
+import { createClient } from "@/lib/supabase/server";
+
+const schema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(2)
+    .max(100),
+
+  slug: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .regex(
+      /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+    ),
+
+  owner_email: z
+    .string()
+    .email(),
+
+  organization_id: z
+    .union([
+      z.literal(""),
+      z.string().uuid(),
+    ])
+    .optional(),
+});
+
+export async function createBarbershop(
+  formData: FormData,
+) {
+  await requirePlatformAdmin();
+
+  const parsed =
+    schema.safeParse(
+      Object.fromEntries(
+        formData,
+      ),
+    );
+
+  if (!parsed.success) {
+    return {
+      ok: false,
+      mensagem:
+        parsed.error
+          .issues[0]
+          ?.message ??
+        "Dados inválidos.",
+    };
+  }
+
+  const supabase =
+    await createClient();
+
+  /*
+   * Toda criação passa pela RPC transacional.
+   *
+   * A RPC agora também:
+   * - impede Platform Admin como owner;
+   * - cria trial de 15 dias;
+   * - aplica identidade visual padrão;
+   * - registra auditoria da plataforma.
+   */
+  const { error } =
+    await supabase.rpc(
+      "create_barbershop_with_owner",
+      {
+        barbershop_name:
+          parsed.data.name,
+        barbershop_slug:
+          parsed.data.slug,
+        owner_email:
+          parsed.data.owner_email,
+        existing_organization_id:
+          parsed.data
+            .organization_id ||
+          null,
+      },
+    );
+
+  if (
+    error?.message.includes(
+      "OWNER_NOT_FOUND",
+    )
+  ) {
+    return {
+      ok: false,
+      mensagem:
+        "Crie primeiro a conta do proprietário no Supabase Auth, com e-mail e senha.",
+    };
+  }
+
+  if (
+    error?.message.includes(
+      "OWNER_PLATFORM_ADMIN_CONFLICT",
+    )
+  ) {
+    return {
+      ok: false,
+      mensagem:
+        "A conta do Platform Admin não pode ser usada como proprietário de uma barbearia.",
+    };
+  }
+
+  if (error) {
+    return {
+      ok: false,
+      mensagem:
+        "Não foi possível criar a barbearia. Verifique os dados, o proprietário e se o slug já existe.",
+    };
+  }
+
+  /*
+   * Eu não redireciono mais o Platform Admin para /admin/{slug}.
+   * O painel /admin é exclusivo do owner/manager daquele tenant.
+   */
+  redirect("/plataforma");
+}
+
+==== src/features/tenancy/server.ts ====
+import {
+  notFound,
+  redirect,
+} from "next/navigation";
+
+import { obterAdministradorAtual } from "@/lib/auth/permissoes";
+import type {
+  Barbershop,
+  MembershipRole,
+} from "@/lib/db/types";
+import { createClient } from "@/lib/supabase/server";
+
+const slugPattern =
+  /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+export function normalizeSlug(
+  value: string,
+) {
+  const slug =
+    value.trim().toLowerCase();
+
+  return slugPattern.test(slug)
+    ? slug
+    : null;
+}
+
+export async function getBarbershopBySlug(
+  value: string,
+) {
+  const slug =
+    normalizeSlug(value);
+
+  if (!slug) return null;
+
+  const supabase =
+    await createClient();
+
+  const { data } =
+    await supabase
+      .from("barbershops")
+      .select("*")
+      .eq("slug", slug)
+      .eq("is_active", true)
+      .is("archived_at", null)
+      .maybeSingle<Barbershop>();
+
+  return data;
+}
+
+export async function requireBarbershop(
+  value: string,
+) {
+  const barbershop =
+    await getBarbershopBySlug(
+      value,
+    );
+
+  if (!barbershop) {
+    notFound();
+  }
+
+  return barbershop;
+}
+
+export async function requireBarbershopManager(
+  value: string,
+) {
+  const barbershop =
+    await requireBarbershop(
+      value,
+    );
+
+  const admin =
+    await obterAdministradorAtual();
+
+  if (!admin) {
+    redirect(
+      `/admin/login?next=${encodeURIComponent(
+        `/admin/${barbershop.slug}`,
+      )}`,
+    );
+  }
+
+  const supabase =
+    await createClient();
+
+  /*
+   * Não existe mais exceção para is_platform_admin.
+   *
+   * Um usuário só administra o tenant se possuir membership ativa
+   * owner/manager naquele barbershop_id.
+   */
+  const { data: membership } =
+    await supabase
+      .from(
+        "barbershop_members",
+      )
+      .select("role")
+      .eq(
+        "barbershop_id",
+        barbershop.id,
+      )
+      .eq(
+        "profile_id",
+        admin.user.id,
+      )
+      .eq("is_active", true)
+      .in(
+        "role",
+        ["owner", "manager"],
+      )
+      .maybeSingle<{
+        role: MembershipRole;
+      }>();
+
+  /*
+   * Eu retorno 404 para não revelar a existência de outro tenant.
+   */
+  if (!membership) {
+    notFound();
+  }
+
+  return {
+    ...admin,
+    barbershop,
+    membershipRole:
+      membership.role,
+  };
+}
+
+export async function listManagedBarbershops() {
+  const admin =
+    await obterAdministradorAtual();
+
+  if (!admin) {
+    redirect("/admin/login");
+  }
+
+  const supabase =
+    await createClient();
+
+  /*
+   * Platform Admin não recebe mais uma lista global por esta função.
+   * Esta função representa exclusivamente tenants administrados
+   * por membership owner/manager.
+   */
+  const { data } =
+    await supabase
+      .from(
+        "barbershop_members",
+      )
+      .select(
+        "barbershops(*)",
+      )
+      .eq(
+        "profile_id",
+        admin.user.id,
+      )
+      .eq("is_active", true)
+      .in(
+        "role",
+        ["owner", "manager"],
+      );
+
+  return (data ?? [])
+    .map(
+      (item) =>
+        item.barbershops as unknown as
+          | Barbershop
+          | null,
+    )
+    .filter(
+      (
+        item,
+      ): item is Barbershop =>
+        Boolean(
+          item?.is_active &&
+            !item.archived_at,
+        ),
+    );
+}
+
+==== src/lib/auth/admin-policy.ts ====
+// Recebe somente claims já verificadas por supabase.auth.getClaims().
+export function permiteAdministracao(
+  userId: string,
+  profile: { id: string; role: string; is_active: boolean } | null,
+  claims: { sub?: string; amr?: unknown } | null | undefined,
+) {
+  return Boolean(
+    profile?.id === userId &&
+    profile.role === "admin" &&
+    profile.is_active &&
+    claims?.sub === userId &&
+    Array.isArray(claims.amr) &&
+    claims.amr.some(
+      (entry: unknown) =>
+        typeof entry === "object" &&
+        entry !== null &&
+        "method" in entry &&
+        entry.method === "password",
+    ),
+  );
+}
+
+==== src/lib/auth/admin-actions.ts ====
+"use server";
+
+import { redirect } from "next/navigation";
+
+import { createClient } from "@/lib/supabase/server";
+import { obterAdministradorAtual } from "./permissoes";
+
+function safeAdminPath(
+  value: FormDataEntryValue | null,
+) {
+  const path =
+    typeof value === "string"
+      ? value.trim()
+      : "";
+
+  if (
+    /^\/admin\/[a-z0-9]+(?:-[a-z0-9]+)*(?:\/[a-z0-9/_-]*)?$/.test(
+      path,
+    ) &&
+    !path.includes("//") &&
+    !path.includes("\\")
+  ) {
+    return path;
+  }
+
+  return "/admin";
+}
+
+export async function entrarAdministrador(
+  _state: { erro: string },
+  formData: FormData,
+) {
+  const email = String(
+    formData.get("email") ?? "",
+  ).trim();
+
+  const password = String(
+    formData.get("password") ?? "",
+  );
+
+  const next = safeAdminPath(
+    formData.get("next"),
+  );
+
+  if (
+    !email ||
+    !password ||
+    email.length > 254 ||
+    password.length > 1024
+  ) {
+    return {
+      erro:
+        "Informe o e-mail e a senha da administração.",
+    };
+  }
+
+  try {
+    const supabase =
+      await createClient();
+
+    const { error } =
+      await supabase.auth.signInWithPassword(
+        {
+          email,
+          password,
+        },
+      );
+
+    if (error) {
+      return {
+        erro:
+          "Não foi possível entrar. Confira suas credenciais e tente novamente.",
+      };
+    }
+
+    if (
+      !(await obterAdministradorAtual())
+    ) {
+      await supabase.auth.signOut({
+        scope: "local",
+      });
+
+      return {
+        erro:
+          "Esta conta não possui acesso à administração.",
+      };
+    }
+  } catch {
+    return {
+      erro:
+        "Não foi possível conectar. Tente novamente em instantes.",
+    };
+  }
+
+  /*
+   * O destino nunca concede acesso por si só.
+   * /admin/[slug] passa obrigatoriamente por requireBarbershopManager(),
+   * que confere a membership daquele tenant no servidor.
+   */
+  redirect(next);
+}
+
+export async function sairAdministrador(
+  formData: FormData,
+) {
+  const slug = String(
+    formData.get("slug") ?? "",
+  )
+    .trim()
+    .toLowerCase();
+
+  const supabase =
+    await createClient();
+
+  const { error } =
+    await supabase.auth.signOut({
+      scope: "local",
+    });
+
+  if (error) {
+    throw new Error(
+      "Não foi possível sair. Tente novamente.",
+    );
+  }
+
+  const next =
+    /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(
+      slug,
+    )
+      ? `/admin/login?next=${encodeURIComponent(
+          `/admin/${slug}`,
+        )}`
+      : "/admin/login";
+
+  redirect(next);
+}
+
+==== src/lib/auth/permissoes.ts ====
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import { permiteAdministracao } from "./admin-policy";
+import type { Profile } from "@/lib/db/types";
+
+async function sessaoAplicacaoAtiva(
+  supabase: Awaited<
+    ReturnType<typeof createClient>
+  >,
+) {
+  const {
+    data: active,
+    error,
+  } = await supabase.rpc(
+    "check_current_app_session",
+  );
+
+  if (
+    error ||
+    active !== true
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+export async function obterUsuarioAtual() {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getUser();
+
+  if (!data.user) {
+    return {
+      user: null,
+      profile: null,
+    };
+  }
+
+  /*
+   * A sessão do Supabase, sozinha, não é mais suficiente.
+   * O servidor também precisa confirmar que esta sessão específica
+   * teve atividade humana dentro dos últimos 30 minutos.
+   */
+  const active =
+    await sessaoAplicacaoAtiva(
+      supabase,
+    );
+
+  if (!active) {
+    try {
+      await supabase.auth.signOut({
+        scope: "local",
+      });
+    } catch {
+      /*
+       * Mesmo se o Auth remoto estiver temporariamente indisponível,
+       * eu não aceito a sessão vencida como autenticada na aplicação.
+       */
+    }
+
+    return {
+      user: null,
+      profile: null,
+    };
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", data.user.id)
+    .single<Profile>();
+
+  return {
+    user: data.user,
+    profile,
+  };
+}
+
+export async function exigirUsuario(
+  slug?: string,
+) {
+  const { user, profile } = await obterUsuarioAtual();
+
+  if (!user) {
+    redirect(
+      slug
+        ? `/${encodeURIComponent(slug)}/login`
+        : "/login",
+    );
+  }
+
+  return { user, profile };
+}
+
+export async function exigirPerfilCompleto(
+  slug?: string,
+) {
+  const { user, profile } = await exigirUsuario(slug);
+
+  if (!profile?.phone || !profile?.full_name) {
+    redirect(
+      slug
+        ? `/${encodeURIComponent(slug)}/completar-cadastro`
+        : "/completar-cadastro",
+    );
+  }
+
+  return { user, profile };
+}
+
+export async function obterAdministradorAtual() {
+  const { user, profile } = await obterUsuarioAtual();
+
+  if (
+    !user ||
+    profile?.role !== "admin" ||
+    !profile.is_active
+  ) {
+    return null;
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.auth.getClaims();
+
+  if (
+    error ||
+    !permiteAdministracao(
+      user.id,
+      profile,
+      data?.claims,
+    )
+  ) {
+    return null;
+  }
+
+  return { user, profile };
+}
+
+export async function exigirAdmin() {
+  const admin = await obterAdministradorAtual();
+
+  if (!admin) {
+    redirect("/admin/login");
+  }
+
+  return admin;
+}
+
+export function podeGerenciarAgenda(
+  role?: string | null,
+) {
+  return (
+    role === "admin" ||
+    role === "barber"
+  );
+}
+
+==== src/lib/auth/provider-settings.ts ====
+type AuthSettingsResponse = {
+  external?: Record<string, boolean | undefined>;
+};
+
+export async function isGoogleAuthEnabled() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!url || !anonKey) {
+    return false;
+  }
+
+  try {
+    const response = await fetch(
+      `${url.replace(/\/$/, "")}/auth/v1/settings`,
+      {
+        headers: {
+          apikey: anonKey,
+        },
+        next: {
+          revalidate: 300,
+        },
+      },
+    );
+
+    if (!response.ok) {
+      return false;
+    }
+
+    const settings =
+      (await response.json()) as AuthSettingsResponse;
+
+    return settings.external?.google === true;
+  } catch {
+    return false;
+  }
+}
+
+==== src/lib/auth/auth-provider.tsx ====
+"use client";
+
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+
+import type {
+  AuthChangeEvent,
+  Session,
+  User,
+} from "@supabase/supabase-js";
+
+import { createClient } from "@/lib/supabase/client";
+
+const INACTIVITY_TIMEOUT_MS =
+  30 * 60 * 1000;
+
+const ACTIVITY_WRITE_THROTTLE_MS =
+  15 * 1000;
+
+/*
+ * Eu não envio um request para cada movimento do usuário.
+ * Um heartbeat por minuto deixa a validação do servidor próxima dos
+ * 30 minutos reais sem criar centenas de writes desnecessários.
+ */
+const SERVER_HEARTBEAT_THROTTLE_MS =
+  60 * 1000;
+
+const ACTIVITY_STORAGE_KEY =
+  "barbearia:last-activity:v1";
+
+type AuthContextValue = {
+  user: User | null;
+  carregando: boolean;
+};
+
+const AuthContext =
+  createContext<AuthContextValue>(
+    {
+      user: null,
+      carregando: true,
+    },
+  );
+
+function agora() {
+  return Date.now();
+}
+
+function lerUltimaAtividade() {
+  if (
+    typeof window ===
+    "undefined"
+  ) {
+    return null;
+  }
+
+  const value =
+    Number(
+      window.localStorage.getItem(
+        ACTIVITY_STORAGE_KEY,
+      ),
+    );
+
+  return Number.isFinite(
+    value,
+  )
+    ? value
+    : null;
+}
+
+function salvarUltimaAtividade(
+  value = agora(),
+) {
+  if (
+    typeof window ===
+    "undefined"
+  ) {
+    return;
+  }
+
+  window.localStorage.setItem(
+    ACTIVITY_STORAGE_KEY,
+    String(value),
+  );
+}
+
+function limparUltimaAtividade() {
+  if (
+    typeof window ===
+    "undefined"
+  ) {
+    return;
+  }
+
+  window.localStorage.removeItem(
+    ACTIVITY_STORAGE_KEY,
+  );
+}
+
+function expirouPorInatividade() {
+  const last =
+    lerUltimaAtividade();
+
+  if (!last) {
+    return false;
+  }
+
+  return (
+    agora() - last >=
+    INACTIVITY_TIMEOUT_MS
+  );
+}
+
+function redirecionarDepoisDaExpiracao() {
+  const {
+    pathname,
+    search,
+  } = window.location;
+
+  const currentPath =
+    `${pathname}${search}`;
+
+  /*
+   * Administração usa seu login
+   * separado por e-mail/senha.
+   */
+  if (
+    pathname ===
+      "/admin" ||
+    pathname.startsWith(
+      "/admin/",
+    )
+  ) {
+    window.location.replace(
+      `/admin/login?erro=sessao-expirada&next=${encodeURIComponent(
+        currentPath,
+      )}`,
+    );
+
+    return;
+  }
+
+  const segments =
+    pathname
+      .split("/")
+      .filter(Boolean);
+
+  const slug =
+    segments[0];
+
+  const isCustomerArea =
+    segments[1] ===
+    "cliente";
+
+  /*
+   * Área autenticada do cliente volta
+   * para o login daquela própria
+   * barbearia.
+   */
+  if (
+    slug &&
+    isCustomerArea
+  ) {
+    window.location.replace(
+      `/${encodeURIComponent(
+        slug,
+      )}/login?motivo=sessao-expirada&next=${encodeURIComponent(
+        currentPath,
+      )}`,
+    );
+
+    return;
+  }
+
+  /*
+   * Se estiver em uma página pública,
+   * eu apenas recarrego já sem sessão.
+   *
+   * O usuário pode continuar navegando
+   * sem ser forçado a fazer login.
+   */
+  window.location.reload();
+}
+
+export function AuthProvider({
+  children,
+}: {
+  children:
+    React.ReactNode;
+}) {
+  const [
+    user,
+    setUser,
+  ] =
+    useState<User | null>(
+      null,
+    );
+
+  const [
+    carregando,
+    setCarregando,
+  ] = useState(true);
+
+  const supabase =
+    useMemo(
+      () =>
+        createClient(),
+      [],
+    );
+
+  const currentUser =
+    useRef<User | null>(
+      null,
+    );
+
+  const signingOut =
+    useRef(false);
+
+  const lastActivityWrite =
+    useRef(0);
+
+  const lastServerHeartbeat =
+    useRef(0);
+
+  const heartbeatInFlight =
+    useRef(false);
+
+  useEffect(() => {
+    let disposed =
+      false;
+
+    function atualizarUsuario(
+      nextUser:
+        | User
+        | null,
+    ) {
+      currentUser.current =
+        nextUser;
+
+      if (!disposed) {
+        setUser(
+          nextUser,
+        );
+
+        setCarregando(
+          false,
+        );
+      }
+    }
+
+    async function expirarSessao() {
+      if (
+        !currentUser.current ||
+        signingOut.current
+      ) {
+        return;
+      }
+
+      signingOut.current =
+        true;
+
+      /*
+       * Eu encerro a sessão deste
+       * navegador e depois forço uma
+       * nova navegação.
+       */
+      try {
+        await supabase.auth.signOut({
+          scope: "local",
+        });
+      } catch {
+        /*
+         * Mesmo se ocorrer falha de rede,
+         * eu removo o estado local e
+         * recarrego a aplicação.
+         */
+      }
+
+      limparUltimaAtividade();
+
+      atualizarUsuario(
+        null,
+      );
+
+      redirecionarDepoisDaExpiracao();
+    }
+
+    async function registrarAtividadeNoServidor(
+      force = false,
+    ) {
+      if (
+        !currentUser.current ||
+        signingOut.current ||
+        heartbeatInFlight.current
+      ) {
+        return;
+      }
+
+      const timestamp =
+        agora();
+
+      if (
+        !force &&
+        timestamp -
+          lastServerHeartbeat.current <
+          SERVER_HEARTBEAT_THROTTLE_MS
+      ) {
+        return;
+      }
+
+      heartbeatInFlight.current =
+        true;
+
+      try {
+        const response =
+          await fetch(
+            "/api/auth/activity",
+            {
+              method: "POST",
+              cache: "no-store",
+              credentials:
+                "same-origin",
+              keepalive: true,
+            },
+          );
+
+        if (
+          response.status ===
+          401
+        ) {
+          await expirarSessao();
+          return;
+        }
+
+        if (response.ok) {
+          lastServerHeartbeat.current =
+            timestamp;
+        }
+      } catch {
+        /*
+         * Falha de rede não renova a atividade do servidor.
+         * Assim a segurança continua fail-closed: se a falha persistir,
+         * o próximo request autenticado será recusado após o timeout.
+         */
+      } finally {
+        heartbeatInFlight.current =
+          false;
+      }
+    }
+
+    function registrarAtividade() {
+      if (
+        !currentUser.current
+      ) {
+        return;
+      }
+
+      const timestamp =
+        agora();
+
+      /*
+       * Evito escrever no localStorage
+       * dezenas de vezes por segundo.
+       */
+      if (
+        timestamp -
+          lastActivityWrite.current <
+        ACTIVITY_WRITE_THROTTLE_MS
+      ) {
+        return;
+      }
+
+      lastActivityWrite.current =
+        timestamp;
+
+      salvarUltimaAtividade(
+        timestamp,
+      );
+
+      /*
+       * A autoridade do timeout agora é o servidor.
+       * O heartbeat registra atividade humana real sem considerar
+       * refresh automático de token como uso da aplicação.
+       */
+      void registrarAtividadeNoServidor();
+    }
+
+    async function verificarInatividade() {
+      if (
+        !currentUser.current ||
+        signingOut.current
+      ) {
+        return;
+      }
+
+      if (
+        expirouPorInatividade()
+      ) {
+        await expirarSessao();
+      }
+    }
+
+    async function inicializar() {
+      const {
+        data,
+      } =
+        await supabase.auth.getUser();
+
+      if (disposed) {
+        return;
+      }
+
+      const nextUser =
+        data.user ?? null;
+
+      atualizarUsuario(
+        nextUser,
+      );
+
+      if (!nextUser) {
+        limparUltimaAtividade();
+        return;
+      }
+
+      const last =
+        lerUltimaAtividade();
+
+      /*
+       * Para usuários que já estavam
+       * logados antes desta atualização,
+       * eu inicio o relógio agora em vez
+       * de expulsá-los imediatamente.
+       */
+      if (!last) {
+        salvarUltimaAtividade();
+        await registrarAtividadeNoServidor(
+          true,
+        );
+        return;
+      }
+
+      await verificarInatividade();
+
+      if (
+        !signingOut.current &&
+        currentUser.current
+      ) {
+        await registrarAtividadeNoServidor(
+          true,
+        );
+      }
+    }
+
+    void inicializar();
+
+    const {
+      data:
+        authSubscription,
+    } =
+      supabase.auth.onAuthStateChange(
+        (
+          event:
+            AuthChangeEvent,
+          session:
+            | Session
+            | null,
+        ) => {
+          const nextUser =
+            session?.user ??
+            null;
+
+          atualizarUsuario(
+            nextUser,
+          );
+
+          if (
+            event ===
+            "SIGNED_IN"
+          ) {
+            signingOut.current =
+              false;
+
+            salvarUltimaAtividade();
+
+            void registrarAtividadeNoServidor(
+              true,
+            );
+          }
+
+          if (
+            event ===
+            "SIGNED_OUT"
+          ) {
+            limparUltimaAtividade();
+            lastServerHeartbeat.current =
+              0;
+          }
+
+          /*
+           * TOKEN_REFRESHED NÃO conta
+           * como atividade humana.
+           *
+           * Isso é fundamental:
+           * o Supabase renova tokens
+           * automaticamente e, se eu
+           * tratasse isso como atividade,
+           * a sessão nunca expiraria.
+           */
+        },
+      );
+
+    const activityEvents:
+      Array<
+        keyof WindowEventMap
+      > = [
+        "pointerdown",
+        "keydown",
+        "touchstart",
+        "scroll",
+      ];
+
+    for (
+      const eventName
+      of activityEvents
+    ) {
+      window.addEventListener(
+        eventName,
+        registrarAtividade,
+        {
+          passive: true,
+        },
+      );
+    }
+
+    function onVisibilityChange() {
+      if (
+        document.visibilityState !==
+        "visible"
+      ) {
+        return;
+      }
+
+      /*
+       * Quando o usuário retorna à aba,
+       * primeiro verifico se já venceu.
+       */
+      void verificarInatividade().then(
+        () => {
+          if (
+            !expirouPorInatividade() &&
+            currentUser.current &&
+            !signingOut.current
+          ) {
+            registrarAtividade();
+          }
+        },
+      );
+    }
+
+    function onStorage(
+      event: StorageEvent,
+    ) {
+      /*
+       * Mantém múltiplas abas do mesmo
+       * navegador sincronizadas.
+       */
+      if (
+        event.key !==
+        ACTIVITY_STORAGE_KEY
+      ) {
+        return;
+      }
+
+      void verificarInatividade();
+    }
+
+    document.addEventListener(
+      "visibilitychange",
+      onVisibilityChange,
+    );
+
+    window.addEventListener(
+      "storage",
+      onStorage,
+    );
+
+    /*
+     * Além dos eventos, faço uma
+     * verificação periódica.
+     */
+    const interval =
+      window.setInterval(
+        () => {
+          void verificarInatividade();
+        },
+        30 * 1000,
+      );
+
+    return () => {
+      disposed = true;
+
+      authSubscription.subscription.unsubscribe();
+
+      window.clearInterval(
+        interval,
+      );
+
+      for (
+        const eventName
+        of activityEvents
+      ) {
+        window.removeEventListener(
+          eventName,
+          registrarAtividade,
+        );
+      }
+
+      document.removeEventListener(
+        "visibilitychange",
+        onVisibilityChange,
+      );
+
+      window.removeEventListener(
+        "storage",
+        onStorage,
+      );
+    };
+  }, [supabase]);
+
+  return (
+    <AuthContext.Provider
+      value={{
+        user,
+        carregando,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth() {
+  return useContext(
+    AuthContext,
+  );
+}
+
+==== src/lib/db/types.ts ====
+export type PerfilRole = "client" | "admin" | "barber";
+export type AuthProvider = "google" | "phone" | "manual";
+export type AppointmentStatus =
+  "pending" | "confirmed" | "completed" | "canceled" | "no_show";
+export type PaymentMethod =
+  "dinheiro" | "pix" | "cartao_credito" | "cartao_debito" | "outro";
+export type PaymentStatus = "pending" | "paid" | "canceled";
+export type MembershipRole = "owner" | "manager" | "staff";
+export type LoyaltyEarningMode = "visit" | "amount" | "service";
+
+export type SubscriptionStatus =
+  | "trial"
+  | "active"
+  | "past_due"
+  | "suspended"
+  | "canceled"
+  | "expired";
+
+export type TenantUiVersion =
+  | "legacy"
+  | "warm-premium";
+
+export type PlatformFeatureCode =
+  | "loyalty"
+  | "birthday_notifications"
+  | "satisfaction_survey"
+  | "email_notifications"
+  | "whatsapp_notifications"
+  | "advanced_reports"
+  | "custom_domain";
+
+export type Profile = {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  phone: string | null;
+  avatar_url: string | null;
+  role: PerfilRole;
+  provider: AuthProvider;
+  created_at: string;
+  updated_at: string;
+  last_login_at: string | null;
+  is_active: boolean;
+  is_platform_admin?: boolean;
+};
+
+export type Barbershop = {
+  id: string;
+  organization_id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  logo_url: string | null;
+  cover_url: string | null;
+  primary_color: string;
+  secondary_color: string;
+  timezone: string;
+  is_active: boolean;
+  ui_version: TenantUiVersion;
+  archived_at: string | null;
+  archived_by: string | null;
+  archive_reason: string | null;
+};
+
+export type Customer = {
+  id: string;
+  barbershop_id: string;
+  profile_id: string | null;
+  full_name: string;
+  email: string | null;
+  phone: string | null;
+  birth_date: string | null;
+  allow_email: boolean;
+  allow_whatsapp: boolean;
+};
+
+export type Service = {
+  id: string;
+  barbershop_id: string;
+  name: string;
+  description: string | null;
+  price: number;
+  duration_minutes: number;
+  image_url: string | null;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type Barber = {
+  id: string;
+  barbershop_id: string;
+  profile_id: string | null;
+  name: string;
+  bio: string | null;
+  photo_url: string | null;
+  phone: string | null;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type BusinessHour = {
+  id: string;
+  barbershop_id: string;
+  barber_id: string;
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+  break_start: string | null;
+  break_end: string | null;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type BlockedSlot = {
+  id: string;
+  barbershop_id: string;
+  barber_id: string;
+  start_at: string;
+  end_at: string;
+  reason: string | null;
+  created_by: string | null;
+  created_at: string;
+};
+
+export type BusySlot = {
+  barbershop_id?: string;
+  barber_id: string;
+  start_at: string;
+  end_at: string;
+};
+
+export type LoyaltyProgram = {
+  id: string;
+  barbershop_id: string;
+  name: string;
+  earning_mode: LoyaltyEarningMode;
+  points_per_visit: number;
+  points_per_currency: number;
+  is_active: boolean;
+};
+
+export type LoyaltyReward = {
+  id: string;
+  barbershop_id: string;
+  name: string;
+  reward_type:
+    | "free_service"
+    | "fixed_discount"
+    | "percentage_discount"
+    | "gift"
+    | "custom";
+  service_id: string | null;
+  points_cost: number;
+  discount_value: number | null;
+  is_active: boolean;
+};
+
+export type AvailableSlot = {
+  startAt: string;
+  endAt: string;
+  label: string;
+};
+
+==== src/app/admin/login/page.tsx ====
+import type { Metadata } from "next";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+
+import { Logo } from "@/components/brand/Logo";
+import { PlatformBrand } from "@/components/brand/PlatformBrand";
+import { AdminLoginForm } from "@/components/forms/AdminLoginForm";
+import {
+  Card,
+  CardDescription,
+  CardTitle,
+} from "@/components/ui/Card";
+import { getBarbershopBySlug } from "@/features/tenancy/server";
+import { obterAdministradorAtual } from "@/lib/auth/permissoes";
+
+export const metadata: Metadata = {
+  title:
+    "Administração | Agendamento online",
+  robots: {
+    index: false,
+    follow: false,
+  },
+};
+
+function firstParam(
+  value:
+    | string
+    | string[]
+    | undefined,
+) {
+  return Array.isArray(value)
+    ? value[0]
+    : value;
+}
+
+function safeAdminNext(
+  value: string | undefined,
+) {
+  if (
+    value &&
+    /^\/admin\/[a-z0-9]+(?:-[a-z0-9]+)*(?:\/[a-z0-9/_-]*)?$/.test(
+      value,
+    ) &&
+    !value.includes("//") &&
+    !value.includes("\\")
+  ) {
+    return value;
+  }
+
+  return "/admin";
+}
+
+function slugFromNext(
+  next: string,
+) {
+  const match =
+    next.match(
+      /^\/admin\/([a-z0-9]+(?:-[a-z0-9]+)*)/,
+    );
+
+  return match?.[1] ?? null;
+}
+
+export default async function AdminLoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<
+    Record<
+      string,
+      string | string[] | undefined
+    >
+  >;
+}) {
+  const query =
+    await searchParams;
+
+  const next =
+    safeAdminNext(
+      firstParam(query.next),
+    );
+
+  const admin =
+    await obterAdministradorAtual();
+
+  if (admin) {
+    redirect(next);
+  }
+
+  const tenantSlug =
+    slugFromNext(next);
+
+  const barbershop =
+    tenantSlug
+      ? await getBarbershopBySlug(
+          tenantSlug,
+        )
+      : null;
+
+  return (
+    <main className="fundo-premium grid min-h-screen place-items-center px-4 py-10">
+      <div className="w-full max-w-md">
+        <div className="rounded-3xl border border-white/10 bg-black/20 p-4">
+          {barbershop ? (
+            <Logo
+              href={`/${barbershop.slug}`}
+              name={barbershop.name}
+              logoUrl={
+                barbershop.logo_url
+              }
+            />
+          ) : (
+            <div className="text-white">
+              <PlatformBrand />
+            </div>
+          )}
+        </div>
+
+        <Card className="mt-5">
+          <CardTitle>
+            Administração
+          </CardTitle>
+
+          <CardDescription>
+            {barbershop
+              ? `Acesse o painel administrativo da ${barbershop.name}.`
+              : "Entre com sua conta administrativa. O sistema abrirá somente as barbearias vinculadas à sua conta."}
+          </CardDescription>
+
+          <AdminLoginForm
+            next={next}
+          />
+        </Card>
+
+        <Link
+          href={
+            barbershop
+              ? `/${barbershop.slug}`
+              : "/"
+          }
+          className="mt-6 block text-center text-sm text-zinc-300"
+        >
+          Voltar para o site
+        </Link>
+      </div>
+    </main>
+  );
+}
+
+==== src/app/admin/page.tsx ====
+import { redirect } from "next/navigation";
+
+import { listManagedBarbershops } from "@/features/tenancy/server";
+
+export default async function AdminPage() {
+  const barbershops =
+    await listManagedBarbershops();
+
+  if (barbershops.length === 1) {
+    redirect(
+      `/admin/${barbershops[0].slug}`,
+    );
+  }
+
+  if (barbershops.length > 1) {
+    /*
+     * Só aparece para uma conta explicitamente vinculada a mais de um tenant
+     * ou para o administrador da plataforma.
+     */
+    redirect("/admin/selecionar");
+  }
+
+  redirect(
+    "/admin/login?erro=sem-barbearia",
+  );
+}
+
+==== src/app/admin/selecionar/page.tsx ====
+import Link from "next/link";
+import { Card, CardDescription, CardTitle } from "@/components/ui/Card";
+import { listManagedBarbershops } from "@/features/tenancy/server";
+
+export default async function SelectBarbershopPage() {
+  const barbershops = await listManagedBarbershops();
+  return (
+    <main className="fundo-premium min-h-screen px-4 py-12">
+      <div className="mx-auto max-w-3xl">
+        <h1 className="text-3xl font-black text-white">
+          Selecione a barbearia
+        </h1>
+        <div className="mt-6 grid gap-4 sm:grid-cols-2">
+          {barbershops.map((barbershop) => (
+            <Link key={barbershop.id} href={`/admin/${barbershop.slug}`}>
+              <Card className="h-full hover:border-brand-500/40">
+                <CardTitle>{barbershop.name}</CardTitle>
+                <CardDescription>/{barbershop.slug}</CardDescription>
+              </Card>
+            </Link>
+          ))}
+          {!barbershops.length && (
+            <Card>
+              <CardDescription>
+                Esta conta não possui uma barbearia vinculada.
+              </CardDescription>
+            </Card>
+          )}
+        </div>
+      </div>
+    </main>
+  );
+}
+
+==== src/components/forms/AdminLoginForm.tsx ====
+"use client";
+
+import { useActionState } from "react";
+
+import { Button } from "@/components/ui/Button";
+import {
+  Input,
+  Label,
+} from "@/components/ui/Input";
+import { entrarAdministrador } from "@/lib/auth/admin-actions";
+
+export function AdminLoginForm({
+  next = "/admin",
+}: {
+  next?: string;
+}) {
+  const [
+    state,
+    action,
+    pending,
+  ] = useActionState(
+    entrarAdministrador,
+    {
+      erro: "",
+    },
+  );
+
+  return (
+    <form
+      action={action}
+      className="mt-6 grid gap-4"
+    >
+      <input
+        type="hidden"
+        name="next"
+        value={next}
+      />
+
+      <div>
+        <Label htmlFor="admin-email">
+          E-mail
+        </Label>
+
+        <Input
+          id="admin-email"
+          name="email"
+          type="email"
+          autoComplete="username"
+          maxLength={254}
+          required
+        />
+      </div>
+
+      <div>
+        <Label htmlFor="admin-password">
+          Senha
+        </Label>
+
+        <Input
+          id="admin-password"
+          name="password"
+          type="password"
+          autoComplete="current-password"
+          maxLength={1024}
+          required
+        />
+      </div>
+
+      {state.erro && (
+        <p
+          role="alert"
+          className="rounded-2xl border border-red-300/20 bg-red-300/[0.08] px-4 py-3 text-sm text-red-100"
+        >
+          {state.erro}
+        </p>
+      )}
+
+      <Button
+        type="submit"
+        disabled={pending}
+      >
+        {pending
+          ? "Entrando..."
+          : "Entrar na administração"}
+      </Button>
+
+      <p className="text-sm text-[var(--text-muted)]">
+        O acesso é liberado apenas para a barbearia vinculada à sua conta
+        administrativa.
+      </p>
+    </form>
+  );
+}
+
+==== src/app/login/page.tsx ====
+import { redirect } from "next/navigation";
+
+export default function LegacyLoginPage() {
+  redirect("/");
+}
+
+==== src/app/[slug]/login/page.tsx ====
+import {
+  LockKeyhole,
+  ShieldCheck,
+} from "lucide-react";
+import { redirect } from "next/navigation";
+
+import { Logo } from "@/components/brand/Logo";
+import { LoginGoogleButton } from "@/components/forms/LoginGoogleButton";
+import { ButtonLink } from "@/components/ui/Button";
+import {
+  Card,
+  CardDescription,
+  CardTitle,
+} from "@/components/ui/Card";
+import { requireBarbershop } from "@/features/tenancy/server";
+import { obterUsuarioAtual } from "@/lib/auth/permissoes";
+import { isGoogleAuthEnabled } from "@/lib/auth/provider-settings";
+import { createClient } from "@/lib/supabase/server";
+
+function safeInternalPath(
+  value: string | undefined,
+  fallback: string,
+) {
+  if (
+    value &&
+    value.startsWith("/") &&
+    !value.startsWith("//") &&
+    !value.includes("\\") &&
+    !/[\x00-\x1f]/.test(value)
+  ) {
+    return value;
+  }
+
+  return fallback;
+}
+
+function firstParam(
+  value:
+    | string
+    | string[]
+    | undefined,
+) {
+  return Array.isArray(value)
+    ? value[0]
+    : value;
+}
+
+export default async function LoginPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{
+    slug: string;
+  }>;
+  searchParams: Promise<
+    Record<
+      string,
+      string | string[] | undefined
+    >
+  >;
+}) {
+  const { slug } = await params;
+  const query = await searchParams;
+
+  const barbershop =
+    await requireBarbershop(slug);
+
+  const requestedNext =
+    safeInternalPath(
+      firstParam(query.next),
+      `/${barbershop.slug}/reservar`,
+    );
+
+  const { user, profile } =
+    await obterUsuarioAtual();
+
+  if (
+    user &&
+    profile?.phone &&
+    profile.full_name
+  ) {
+    redirect(requestedNext);
+  }
+
+  if (user) {
+    redirect(
+      `/${barbershop.slug}/completar-cadastro?next=${encodeURIComponent(
+        requestedNext,
+      )}`,
+    );
+  }
+
+  const supabase =
+    await createClient();
+
+  const [
+    { data: settings },
+    googleEnabled,
+  ] = await Promise.all([
+    supabase
+      .from("business_settings")
+      .select(
+        "business_name,logo_url",
+      )
+      .eq(
+        "barbershop_id",
+        barbershop.id,
+      )
+      .maybeSingle(),
+    isGoogleAuthEnabled(),
+  ]);
+
+  const brandName =
+    settings?.business_name ||
+    barbershop.name;
+
+  const logoUrl =
+    settings?.logo_url ||
+    barbershop.logo_url;
+
+  return (
+    <main className="ui-barber-ambient fundo-premium grid min-h-screen place-items-center px-4 py-10">
+      <div className="relative z-10 w-full max-w-md">
+        <div className="ui-public-brand-panel rounded-[1.5rem] border p-4">
+          <Logo
+            href={`/${barbershop.slug}`}
+            name={brandName}
+            logoUrl={logoUrl}
+            publicSurface
+          />
+        </div>
+
+        <Card className="mt-5">
+          <div className="mb-5 grid h-12 w-12 place-items-center rounded-2xl bg-[var(--tenant-accent-soft)] text-[var(--tenant-accent)]">
+            <LockKeyhole className="h-5 w-5" />
+          </div>
+
+          <CardTitle>
+            Minha conta
+          </CardTitle>
+
+          <CardDescription>
+            Entrar é opcional para reservar. A conta serve para acompanhar
+            horários, histórico e fidelidade.
+          </CardDescription>
+
+          <div className="mt-5 rounded-2xl border border-[var(--border)] bg-[#FAF8F4] p-4 text-sm leading-6 text-[var(--text-muted)]">
+            <span className="flex items-start gap-2">
+              <ShieldCheck className="mt-1 h-4 w-4 shrink-0 text-[var(--tenant-accent)]" />
+              Você pode voltar para a reserva agora e confirmar apenas com nome
+              e telefone.
+            </span>
+          </div>
+
+          {googleEnabled ? (
+            <div className="mt-6">
+              <LoginGoogleButton
+                slug={barbershop.slug}
+                next={requestedNext}
+              />
+            </div>
+          ) : (
+            <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+              O acesso com Google não está habilitado neste ambiente. Isso não
+              impede uma reserva sem conta.
+            </div>
+          )}
+
+          <ButtonLink
+            href={`/${barbershop.slug}/reservar`}
+            variant="secondary"
+            className="mt-4 w-full"
+          >
+            Reservar sem conta
+          </ButtonLink>
+        </Card>
+      </div>
+    </main>
+  );
+}
+
+==== src/app/plataforma/page.tsx ====
+import { ActionForm } from "@/components/forms/ActionForm";
+import { Button } from "@/components/ui/Button";
+import {
+  Card,
+  CardDescription,
+  CardTitle,
+} from "@/components/ui/Card";
+import {
+  Input,
+  Label,
+  Select,
+} from "@/components/ui/Input";
+import { createBarbershop as createBarbershopResult } from "@/features/platform/actions";
+import { requirePlatformAdmin } from "@/features/platform/server";
+import { asFormAction } from "@/lib/actions/form-action";
+import { createClient } from "@/lib/supabase/server";
+
+const createBarbershop =
+  asFormAction(
+    createBarbershopResult,
+  );
+
+export default async function PlatformPage() {
+  await requirePlatformAdmin();
+
+  const supabase =
+    await createClient();
+
+  /*
+   * Esta tela ainda é o esqueleto existente.
+   * O dashboard completo será construído no próximo pacote.
+   *
+   * A leitura comercial é permitida ao Platform Admin pela RLS.
+   */
+  const { data } =
+    await supabase
+      .from("barbershops")
+      .select(
+        `
+          *,
+          subscriptions (
+            status,
+            trial_started_at,
+            trial_ends_at,
+            plans (
+              name
+            )
+          )
+        `,
+      )
+      .order(
+        "created_at",
+        {
+          ascending: false,
+        },
+      );
+
+  const {
+    data: organizations,
+  } = await supabase
+    .from("organizations")
+    .select("id,name")
+    .order("name");
+
+  return (
+    <main className="fundo-premium min-h-screen px-4 py-10">
+      <div className="mx-auto grid max-w-5xl gap-4">
+        <h1 className="text-3xl font-black text-white">
+          Administração da plataforma
+        </h1>
+
+        <Card>
+          <CardTitle>
+            Nova barbearia
+          </CardTitle>
+
+          <CardDescription>
+            Crie previamente a conta do proprietário com e-mail e senha no
+            Supabase Auth. Novos tenants recebem trial de 15 dias. Trials já
+            existentes não são alterados.
+          </CardDescription>
+
+          <ActionForm
+            action={
+              createBarbershop
+            }
+            className="mt-5 grid gap-4 md:grid-cols-3"
+          >
+            <div>
+              <Label>
+                Nome
+              </Label>
+
+              <Input
+                name="name"
+                required
+              />
+            </div>
+
+            <div>
+              <Label>
+                Slug
+              </Label>
+
+              <Input
+                name="slug"
+                placeholder="barbearia-imperial"
+                required
+              />
+            </div>
+
+            <div>
+              <Label>
+                E-mail do proprietário
+              </Label>
+
+              <Input
+                name="owner_email"
+                type="email"
+                required
+              />
+            </div>
+
+            <div>
+              <Label>
+                Organização
+              </Label>
+
+              <Select name="organization_id">
+                <option value="">
+                  Nova organização
+                </option>
+
+                {organizations?.map(
+                  (org) => (
+                    <option
+                      key={
+                        org.id
+                      }
+                      value={
+                        org.id
+                      }
+                    >
+                      {
+                        org.name
+                      }
+                    </option>
+                  ),
+                )}
+              </Select>
+            </div>
+
+            <div>
+              <Button>
+                Criar barbearia
+              </Button>
+            </div>
+          </ActionForm>
+        </Card>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          {data?.map(
+            (barbershop) => (
+              <Card
+                key={
+                  barbershop.id
+                }
+              >
+                <CardTitle>
+                  {
+                    barbershop.name
+                  }
+                </CardTitle>
+
+                <CardDescription>
+                  /
+                  {
+                    barbershop.slug
+                  }{" "}
+                  •{" "}
+                  {
+                    barbershop
+                      .subscriptions
+                      ?.status ||
+                    "sem plano"
+                  }
+                </CardDescription>
+              </Card>
+            ),
+          )}
+        </div>
+      </div>
+    </main>
+  );
+}
+
+==== src/components/brand/PlatformBrand.tsx ====
+import Link from "next/link";
+import { Scissors } from "lucide-react";
+
+export function PlatformBrand({
+  href = "/",
+}: {
+  href?: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="inline-flex items-center gap-3"
+      aria-label="Ir para a página inicial"
+    >
+      <span className="grid h-11 w-11 place-items-center rounded-2xl border border-[#B8873F]/30 bg-[#B8873F]/10 text-[#B8873F]">
+        <Scissors className="h-5 w-5" />
+      </span>
+
+      <span className="leading-tight">
+        <span className="block text-sm font-extrabold text-current">
+          Gestão de barbearias
+        </span>
+        <span className="block text-[10px] font-bold uppercase tracking-[0.18em] opacity-60">
+          Agendamento online
+        </span>
+      </span>
+    </Link>
+  );
+}
+
+==== src/app/auth/callback/route.ts ====
+import { NextResponse } from "next/server";
+
+import { createClient } from "@/lib/supabase/server";
+
+function safeInternalPath(
+  value: string | null,
+) {
+  if (
+    value &&
+    value.startsWith("/") &&
+    !value.startsWith("//") &&
+    !value.includes("\\") &&
+    !/[\x00-\x1f]/.test(value)
+  ) {
+    return value;
+  }
+
+  return "/";
+}
+
+export async function GET(
+  request: Request,
+) {
+  const requestUrl =
+    new URL(request.url);
+
+  const code =
+    requestUrl.searchParams.get(
+      "code",
+    );
+
+  const next =
+    safeInternalPath(
+      requestUrl.searchParams.get(
+        "next",
+      ),
+    );
+
+  if (code) {
+    const supabase =
+      await createClient();
+
+    await supabase.auth.exchangeCodeForSession(
+      code,
+    );
+  }
+
+  return NextResponse.redirect(
+    new URL(
+      next,
+      requestUrl.origin,
+    ),
+  );
+}
+
+==== src/app/api/auth/activity/route.ts ====
+import { NextResponse } from "next/server";
+
+import { createClient } from "@/lib/supabase/server";
+
+export const dynamic = "force-dynamic";
+
+export async function POST() {
+  const supabase =
+    await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json(
+      {
+        error:
+          "AUTH_REQUIRED",
+      },
+      {
+        status: 401,
+      },
+    );
+  }
+
+  const {
+    data: active,
+    error,
+  } = await supabase.rpc(
+    "touch_current_app_session",
+  );
+
+  if (
+    error ||
+    active !== true
+  ) {
+    /*
+     * A sessão já ultrapassou o limite de inatividade ou o servidor
+     * não conseguiu validá-la. Eu encerro o refresh token deste navegador
+     * para que o timeout não seja apenas visual.
+     */
+    await supabase.auth.signOut({
+      scope: "local",
+    });
+
+    return NextResponse.json(
+      {
+        error:
+          "SESSION_EXPIRED",
+      },
+      {
+        status: 401,
+      },
+    );
+  }
+
+  return new NextResponse(
+    null,
+    {
+      status: 204,
+      headers: {
+        "Cache-Control":
+          "no-store",
+      },
+    },
+  );
+}
+
+==== src/lib/supabase/server.ts ====
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
+
+export async function createClient() {
+  const cookieStore = await cookies();
+
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll();
+        },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) => {
+              cookieStore.set(name, value, options);
+            });
+          } catch {
+            // Chamado em Server Components. O middleware também renova a sessão.
+          }
+        },
+      },
+    },
+  );
+}
+
+==== src/lib/supabase/client.ts ====
+"use client";
+
+import { createBrowserClient } from "@supabase/ssr";
+
+export function createClient() {
+  return createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  );
+}
+
+==== src/lib/supabase/public-server.ts ====
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+
+/**
+ * Eu uso um cliente público sem cookies para leituras anônimas que podem
+ * entrar no cache do servidor sem depender da sessão de quem abriu a página.
+ */
+export function createPublicServerClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!url || !key) {
+    throw new Error("Supabase público não configurado.");
+  }
+
+  return createSupabaseClient(url, key, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+  });
+}
+
+==== tests/platform-security.test.mjs ====
+import {
+  test,
+} from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import {
+  fileURLToPath,
+} from "node:url";
+
+const root =
+  fileURLToPath(
+    new URL(
+      "..",
+      import.meta.url,
+    ),
+  );
+
+function read(path) {
+  return fs.readFileSync(
+    `${root}/${path}`,
+    "utf8",
+  );
+}
+
+test(
+  "can_manage_barbershop não concede acesso por is_platform_admin",
+  () => {
+    const migration =
+      read(
+        "supabase/migrations/029_platform_admin_foundation.sql",
+      );
+
+    const match =
+      migration.match(
+        /create or replace function public\.can_manage_barbershop[\s\S]*?\$\$;/,
+      );
+
+    assert.ok(
+      match,
+      "A migration precisa redefinir can_manage_barbershop.",
+    );
+
+    assert.doesNotMatch(
+      match[0],
+      /is_platform_admin/,
+    );
+
+    assert.match(
+      match[0],
+      /barbershop_members/,
+    );
+
+    assert.match(
+      match[0],
+      /owner.*manager|manager.*owner/s,
+    );
+  },
+);
+
+test(
+  "requireBarbershopManager não possui bypass de Platform Admin",
+  () => {
+    const source =
+      read(
+        "src/features/tenancy/server.ts",
+      );
+
+    assert.doesNotMatch(
+      source,
+      /is_platform_admin[\s\S]*membershipRole:\s*"owner"/,
+    );
+
+    assert.match(
+      source,
+      /barbershop_members/,
+    );
+  },
+);
+
+test(
+  "tabelas de plataforma possuem RLS e não concedem escrita direta",
+  () => {
+    const migration =
+      read(
+        "supabase/migrations/029_platform_admin_foundation.sql",
+      );
+
+    for (
+      const table
+      of [
+        "platform_features",
+        "plan_features",
+        "barbershop_feature_overrides",
+        "platform_audit_logs",
+        "platform_support_sessions",
+      ]
+    ) {
+      assert.match(
+        migration,
+        new RegExp(
+          `alter table public\\.${table} enable row level security`,
+        ),
+      );
+
+      assert.match(
+        migration,
+        new RegExp(
+          `revoke all on public\\.${table}`,
+        ),
+      );
+    }
+
+    assert.match(
+      migration,
+      /revoke insert, update, delete[\s\S]*on public\.subscriptions/,
+    );
+  },
+);
+
+test(
+  "trial de 15 dias é aplicado somente no onboarding novo",
+  () => {
+    const migration =
+      read(
+        "supabase/migrations/029_platform_admin_foundation.sql",
+      );
+
+    assert.match(
+      migration,
+      /interval '15 days'/,
+    );
+
+    assert.doesNotMatch(
+      migration,
+      /update public\.subscriptions[\s\S]*trial_ends_at\s*=/i,
+    );
+  },
+);
+
+test(
+  "modo suporte exige expiração e escopo explícito",
+  () => {
+    const migration =
+      read(
+        "supabase/migrations/029_platform_admin_foundation.sql",
+      );
+
+    assert.match(
+      migration,
+      /platform_support_sessions/,
+    );
+
+    assert.match(
+      migration,
+      /expires_at <= created_at \+ interval '30 minutes'/,
+    );
+
+    assert.match(
+      migration,
+      /SUPPORT_SCOPE_REQUIRED/,
+    );
+
+    assert.match(
+      migration,
+      /SUPPORT_SCHEDULE_VIEWED/,
+    );
+
+    assert.match(
+      migration,
+      /SUPPORT_CUSTOMER_CONTACT_VIEWED/,
+    );
+  },
+);
+
+test(
+  "Platform Admin possui guard próprio e não redireciona para painel do tenant",
+  () => {
+    const server =
+      read(
+        "src/features/platform/server.ts",
+      );
+
+    const actions =
+      read(
+        "src/features/platform/actions.ts",
+      );
+
+    assert.match(
+      server,
+      /requirePlatformAdmin/,
+    );
+
+    assert.match(
+      server,
+      /is_platform_admin/,
+    );
+
+    assert.doesNotMatch(
+      actions,
+      /redirect\(`\/admin\/\$\{/,
+    );
+
+    assert.match(
+      actions,
+      /redirect\("\/plataforma"\)/,
+    );
+  },
+);
+
+==== tests/server-session.test.mjs ====
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import { test } from "node:test";
+import { fileURLToPath } from "node:url";
+
+import { PGlite } from "@electric-sql/pglite";
+
+const root = fileURLToPath(
+  new URL("..", import.meta.url),
+);
+
+function read(path) {
+  return fs.readFileSync(
+    `${root}/${path}`,
+    "utf8",
+  );
+}
+
+async function createDatabase() {
+  const db = new PGlite();
+
+  await db.exec(`
+    create role anon;
+    create role authenticated;
+
+    create schema auth;
+
+    create table auth.users (
+      id uuid primary key
+    );
+
+    create function auth.uid()
+    returns uuid
+    language sql
+    stable
+    as $$
+      select nullif(
+        current_setting(
+          'request.jwt.claim.sub',
+          true
+        ),
+        ''
+      )::uuid
+    $$;
+
+    create function auth.jwt()
+    returns jsonb
+    language sql
+    stable
+    as $$
+      select coalesce(
+        nullif(
+          current_setting(
+            'request.jwt.claims',
+            true
+          ),
+          ''
+        ),
+        '{}'
+      )::jsonb
+    $$;
+
+    create table public.barbershops (
+      id uuid primary key,
+      slug text not null unique,
+      is_active boolean not null default true
+    );
+  `);
+
+  await db.exec(
+    read(
+      "supabase/migrations/027_audit_fixes_rollout_and_sessions.sql",
+    ),
+  );
+
+  return db;
+}
+
+test(
+  "servidor recusa sessão após 30 minutos e heartbeat não a ressuscita",
+  async () => {
+    const db = await createDatabase();
+
+    const userId =
+      "20000000-0000-4000-8000-000000000001";
+
+    const sessionId =
+      "30000000-0000-4000-8000-000000000001";
+
+    await db.exec(`
+      insert into auth.users(id)
+      values ('${userId}');
+
+      set role authenticated;
+      set request.jwt.claim.sub='${userId}';
+      set request.jwt.claims='{"sub":"${userId}","session_id":"${sessionId}"}';
+    `);
+
+    const initial = await db.query(`
+      select public.check_current_app_session() as active;
+    `);
+
+    assert.equal(
+      initial.rows[0].active,
+      true,
+    );
+
+    await db.exec(`
+      reset role;
+
+      update public.app_session_activity
+      set last_activity_at = now() - interval '31 minutes'
+      where session_id = '${sessionId}';
+
+      set role authenticated;
+      set request.jwt.claim.sub='${userId}';
+      set request.jwt.claims='{"sub":"${userId}","session_id":"${sessionId}"}';
+    `);
+
+    const expired = await db.query(`
+      select public.check_current_app_session() as active;
+    `);
+
+    assert.equal(
+      expired.rows[0].active,
+      false,
+    );
+
+    const touch = await db.query(`
+      select public.touch_current_app_session() as touched;
+    `);
+
+    assert.equal(
+      touch.rows[0].touched,
+      false,
+    );
+
+    const clientSource = read(
+      "src/lib/auth/auth-provider.tsx",
+    );
+
+    const serverSource = read(
+      "src/lib/auth/permissoes.ts",
+    );
+
+    const proxySource = read(
+      "src/proxy.ts",
+    );
+
+    assert.match(
+      clientSource,
+      /TOKEN_REFRESHED NÃO conta/,
+    );
+
+    assert.match(
+      serverSource,
+      /check_current_app_session/,
+    );
+
+    assert.match(
+      proxySource,
+      /check_current_app_session/,
+    );
+
+    await db.close();
+  },
+);
+
+test(
+  "reserva guest explica a regra de vínculo por e-mail",
+  () => {
+    const source = read(
+      "src/components/forms/ReservaForm.tsx",
+    );
+
+    assert.match(
+      source,
+      /mesmo e-mail usado no login Google/,
+    );
+
+    assert.match(
+      source,
+      /sem e-mail não é vinculada automaticamente/,
+    );
+  },
+);
+
+test(
+  "dependência Global Config foi removida do package.json",
+  () => {
+    const pkg = JSON.parse(
+      read("package.json"),
+    );
+
+    assert.equal(
+      Object.hasOwn(
+        pkg.dependencies ?? {},
+        "@vercel/global-config",
+      ),
+      false,
+    );
+  },
+);
+
+==== tests/admin-policy.test.mjs ====
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { permiteAdministracao } from '../src/lib/auth/admin-policy.ts';
+
+const admin = { id: 'admin-id', role: 'admin', is_active: true };
+const password = { sub: 'admin-id', amr: [{ method: 'password' }] };
+for (const [name, profile, claims, allowed] of [
+  ['admin ativo com senha', admin, password, true],
+  ['admin Google sem senha', admin, { sub: 'admin-id', amr: [{ method: 'oauth' }] }, false],
+  ['cliente com senha', { ...admin, role: 'client' }, password, false],
+  ['barbeiro com senha', { ...admin, role: 'barber' }, password, false],
+  ['admin inativo', { ...admin, is_active: false }, password, false],
+  ['sem perfil', null, password, false],
+  ['sem claims', admin, null, false],
+  ['claims de outra conta', admin, { ...password, sub: 'outro' }, false],
+  ['perfil de outra conta', { ...admin, id: 'outro' }, password, false],
+  ['metadados não substituem autenticação', admin, { sub: 'admin-id', user_metadata: { role: 'admin', method: 'password' } }, false],
+  ['amr inválido', admin, { sub: 'admin-id', amr: [null, 'password', {}] }, false],
+  ['refresh mantém autenticação com senha', admin, { ...password, amr: [{ method: 'password' }, { method: 'token_refresh' }] }, true]
+]) test(name, () => assert.equal(permiteAdministracao('admin-id', profile, claims), allowed));
+
+==== docs/ACESSO_ADMINISTRATIVO.md ====
+# Acesso administrativo
+
+Clientes entram com Google em `/{slug}/login`. Proprietários e gestores usam e-mail e senha em `/admin/login`. Uma sessão Google não concede poderes administrativos.
+
+## Primeiro administrador da plataforma
+
+Crie sua conta com e-mail e senha em Supabase Authentication > Users. Copie o UUID dessa conta e execute no SQL Editor:
+
+```sql
+update public.profiles
+set role = 'admin', is_platform_admin = true, is_active = true, updated_at = now()
+where id = 'UUID_DA_SUA_CONTA'::uuid;
+```
+
+Confirme que exatamente a conta desejada foi atualizada. A promoção administrativa nunca é feita pelo formulário público.
+
+## Sevilha existente
+
+A migration `009` associa os perfis administrativos ativos anteriores à Sevilha. O primeiro Platform Admin precisa ser promovido separadamente pelo SQL acima.
+
+## Nova barbearia e unidades
+
+1. Crie a conta do proprietário com e-mail e senha em Supabase Auth.
+2. Entre em `/plataforma` com sua conta administrativa.
+3. Preencha nome, slug e o e-mail cadastrado no Auth.
+4. Escolha “Nova organização” para uma nova empresa ou a organização existente para outra unidade do mesmo dono.
+5. Entregue `/{slug}` e `/admin/{slug}`.
+
+A criação é transacional. Inclui unidade, associação do proprietário, configurações, plano de teste, fidelidade e modelos de mensagem. Uma organização existente só pode receber unidade com o mesmo proprietário.
+
+O proprietário configura catálogo, imagens, expediente, regras e mensagens em seu painel. A seleção `/admin/selecionar` mostra as unidades permitidas. O cadastro por conta própria, convites por e-mail e cobrança recorrente não fazem parte desta versão.
+
+==== middleware.ts ====
+(nao encontrado)
+
+==== src/middleware.ts ====
+(nao encontrado)
+
+==== next.config.ts ====
+import type { NextConfig } from "next";
+
+const securityHeaders = [
+  {
+    key: "X-Content-Type-Options",
+    value: "nosniff",
+  },
+  {
+    key: "X-Frame-Options",
+    value: "DENY",
+  },
+  {
+    key: "Referrer-Policy",
+    value: "strict-origin-when-cross-origin",
+  },
+  {
+    key: "Permissions-Policy",
+    value:
+      "camera=(), microphone=(), geolocation=(), browsing-topics=()",
+  },
+  {
+    key: "X-DNS-Prefetch-Control",
+    value: "off",
+  },
+] as const;
+
+const privatePageHeaders = [
+  {
+    key: "Cache-Control",
+    value:
+      "private, no-store, max-age=0, must-revalidate",
+  },
+  {
+    key: "X-Robots-Tag",
+    value: "noindex, nofollow, noarchive",
+  },
+] as const;
+
+const nextConfig: NextConfig = {
+  poweredByHeader: false,
+
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "6mb",
+    },
+  },
+
+  images: {
+    unoptimized: true,
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "*.supabase.co",
+      },
+      {
+        protocol: "https",
+        hostname:
+          "lh3.googleusercontent.com",
+      },
+    ],
+  },
+
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          ...securityHeaders,
+        ],
+      },
+      {
+        source:
+          "/admin/:path*",
+        headers: [
+          ...privatePageHeaders,
+        ],
+      },
+      {
+        source:
+          "/:slug/cliente/:path*",
+        headers: [
+          ...privatePageHeaders,
+        ],
+      },
+      {
+        source:
+          "/auth/:path*",
+        headers: [
+          ...privatePageHeaders,
+        ],
+      },
+    ];
+  },
+};
+
+export default nextConfig;
+
+==== grep -rn obterAdministradorAtual (src/) ====
+src/app/admin/login/page.tsx:14:import { obterAdministradorAtual } from "@/lib/auth/permissoes";
+src/app/admin/login/page.tsx:83:    await obterAdministradorAtual();
+src/features/platform/server.ts:6:import { obterAdministradorAtual } from "@/lib/auth/permissoes";
+src/features/platform/server.ts:16:    await obterAdministradorAtual();
+src/features/tenancy/server.ts:6:import { obterAdministradorAtual } from "@/lib/auth/permissoes";
+src/features/tenancy/server.ts:74:    await obterAdministradorAtual();
+src/features/tenancy/server.ts:133:    await obterAdministradorAtual();
+src/lib/auth/admin-actions.ts:6:import { obterAdministradorAtual } from "./permissoes";
+src/lib/auth/admin-actions.ts:77:      !(await obterAdministradorAtual())
+src/lib/auth/permissoes.ts:111:export async function obterAdministradorAtual() {
+src/lib/auth/permissoes.ts:140:  const admin = await obterAdministradorAtual();
+
+==== grep -rn is_platform_admin (src/ supabase/) ====
+src/features/platform/server.ts:28:      .is_platform_admin
+src/features/tenancy/server.ts:88:   * Não existe mais exceção para is_platform_admin.
+src/lib/db/types.ts:44:  is_platform_admin?: boolean;
+supabase/migrations/009_saas_multitenant.sql:17:  add column if not exists is_platform_admin boolean not null default false;
+supabase/migrations/010_saas_rls.sql:14:create or replace function public.is_platform_admin()
+supabase/migrations/010_saas_rls.sql:23:    where id = auth.uid() and is_platform_admin = true and is_active = true
+supabase/migrations/010_saas_rls.sql:49:  select public.is_platform_admin() or (
+supabase/migrations/010_saas_rls.sql:67:  select public.is_platform_admin() or exists (
+supabase/migrations/010_saas_rls.sql:86:  or public.is_platform_admin()
+supabase/migrations/010_saas_rls.sql:95:using (id = auth.uid() or public.is_platform_admin())
+supabase/migrations/010_saas_rls.sql:96:with check (id = auth.uid() or public.is_platform_admin());
+supabase/migrations/010_saas_rls.sql:99:  public.is_platform_admin()
+supabase/migrations/010_saas_rls.sql:106:using (public.is_platform_admin()) with check (public.is_platform_admin());
+supabase/migrations/010_saas_rls.sql:109:  is_active = true or public.is_barbershop_member(id) or public.is_platform_admin()
+supabase/migrations/010_saas_rls.sql:114:with check (public.is_platform_admin());
+supabase/migrations/010_saas_rls.sql:116:using (public.is_platform_admin());
+supabase/migrations/010_saas_rls.sql:256:create policy plans_public_read on public.plans for select using (is_active = true or public.is_platform_admin());
+supabase/migrations/010_saas_rls.sql:258:using (public.is_platform_admin()) with check (public.is_platform_admin());
+supabase/migrations/010_saas_rls.sql:263:using (public.is_platform_admin()) with check (public.is_platform_admin());
+supabase/migrations/014_appointment_functions.sql:300:  if auth.role() <> 'service_role' and not public.is_platform_admin() then raise exception 'FORBIDDEN'; end if;
+supabase/migrations/014_appointment_functions.sql:409:  if not public.is_platform_admin() then raise exception 'FORBIDDEN'; end if;
+supabase/migrations/015_integrity_and_permissions.sql:35:revoke update(is_platform_admin) on public.profiles from public,anon,authenticated;
+supabase/migrations/015_integrity_and_permissions.sql:37:create policy profiles_select_scope on public.profiles for select using (id=auth.uid() or public.is_platform_admin());
+supabase/migrations/015_integrity_and_permissions.sql:41:select public.is_platform_admin() or (
+supabase/migrations/029_platform_admin_foundation.sql:290:  using (public.is_platform_admin());
+supabase/migrations/029_platform_admin_foundation.sql:297:  using (public.is_platform_admin());
+supabase/migrations/029_platform_admin_foundation.sql:304:  using (public.is_platform_admin());
+supabase/migrations/029_platform_admin_foundation.sql:311:  using (public.is_platform_admin());
+supabase/migrations/029_platform_admin_foundation.sql:319:    public.is_platform_admin()
+supabase/migrations/029_platform_admin_foundation.sql:335:  using (public.is_platform_admin());
+supabase/migrations/029_platform_admin_foundation.sql:432:  if not public.is_platform_admin() then
+supabase/migrations/029_platform_admin_foundation.sql:548:  if not public.is_platform_admin() then
+supabase/migrations/029_platform_admin_foundation.sql:648:  if not public.is_platform_admin() then
+supabase/migrations/029_platform_admin_foundation.sql:775:  if not public.is_platform_admin() then
+supabase/migrations/029_platform_admin_foundation.sql:881:  if not public.is_platform_admin() then
+supabase/migrations/029_platform_admin_foundation.sql:949:  if not public.is_platform_admin() then
+supabase/migrations/029_platform_admin_foundation.sql:1065:  if not public.is_platform_admin() then
+supabase/migrations/029_platform_admin_foundation.sql:1127:    public.is_platform_admin()
+supabase/migrations/029_platform_admin_foundation.sql:1359:  if not public.is_platform_admin() then
+supabase/migrations/029_platform_admin_foundation.sql:1394:  if coalesce(owner_profile.is_platform_admin, false) then
+supabase/verification/platform_foundation_readiness.sql:24:-- 2. can_manage_barbershop não pode mais conter is_platform_admin.
+supabase/verification/platform_foundation_readiness.sql:27:    'is_platform_admin'
+
+==== grep -rn requirePlatformAdmin (src/) ====
+src/app/plataforma/page.tsx:14:import { requirePlatformAdmin } from "@/features/platform/server";
+src/app/plataforma/page.tsx:24:  await requirePlatformAdmin();
+src/features/platform/actions.ts:6:import { requirePlatformAdmin } from "@/features/platform/server";
+src/features/platform/actions.ts:39:  await requirePlatformAdmin();
+src/features/platform/server.ts:14:export async function requirePlatformAdmin() {
+
+==== grep -rn check_current_app_session (src/ supabase/ tests/ docs/) ====
+src/lib/auth/permissoes.ts:15:    "check_current_app_session",
+src/proxy.ts:206:      "check_current_app_session",
+supabase/migrations/027_audit_fixes_rollout_and_sessions.sql:72:create or replace function public.check_current_app_session()
+supabase/migrations/027_audit_fixes_rollout_and_sessions.sql:129:on function public.check_current_app_session()
+supabase/migrations/027_audit_fixes_rollout_and_sessions.sql:133:on function public.check_current_app_session()
+supabase/verification/release_readiness.sql:56:  'check_current_app_session',
+supabase/verification/release_readiness.sql:58:    'public.check_current_app_session()'
+tests/server-session.test.mjs:100:      select public.check_current_app_session() as active;
+tests/server-session.test.mjs:121:      select public.check_current_app_session() as active;
+tests/server-session.test.mjs:157:      /check_current_app_session/,
+tests/server-session.test.mjs:162:      /check_current_app_session/,
+
+==== grep -rn '/plataforma' (src/) ====
+src/features/platform/actions.ts:124:  redirect("/plataforma");
+src/features/platform/server.ts:21:        "/plataforma",
+
+==== grep -rn 'signOut|logout' (src/) ====
+src/app/admin/[slug]/reservas/page.tsx:429:          pagamentos e conclua atendimentos sem sair da tela.
+src/app/api/auth/activity/route.ts:43:    await supabase.auth.signOut({
+src/components/layout/AdminSidebar.tsx:13:import { sairAdministrador } from "@/lib/auth/admin-actions";
+src/components/layout/AdminSidebar.tsx:121:        action={sairAdministrador}
+src/lib/auth/admin-actions.ts:79:      await supabase.auth.signOut({
+src/lib/auth/admin-actions.ts:103:export async function sairAdministrador(
+src/lib/auth/admin-actions.ts:116:    await supabase.auth.signOut({
+src/lib/auth/admin-actions.ts:122:      "Não foi possível sair. Tente novamente.",
+src/lib/auth/auth-provider.tsx:273:        await supabase.auth.signOut({
+src/lib/auth/permissoes.ts:51:      await supabase.auth.signOut({
+src/proxy.ts:214:        await supabase.auth.signOut({
+src/proxy.ts:299:      await supabase.auth.signOut({
+
+==== find src/app/plataforma -type f ====
+src/app/plataforma/page.tsx
+
+==== find src/app/admin -maxdepth 2 -type f ====
+src/app/admin/[slug]/error.tsx
+src/app/admin/[slug]/layout.tsx
+src/app/admin/[slug]/loading.tsx
+src/app/admin/[slug]/not-found.tsx
+src/app/admin/[slug]/page.tsx
+src/app/admin/login/page.tsx
+src/app/admin/page.tsx
+src/app/admin/selecionar/page.tsx
+
+==== Resumo ====
+OK — saida em _coleta-platform-admin.txt

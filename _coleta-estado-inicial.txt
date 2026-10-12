@@ -1,0 +1,718 @@
+Repo: /c/Users/marco/OneDrive/Documentos/barbearia-Sevilha
+Data: 2026-10-11T11:55:22Z
+
+==== git branch --show-current ====
+main
+
+==== git status --short ====
+?? _coleta-estado-inicial.txt
+?? coletar-estado-inicial.sh
+
+==== git log -10 --oneline ====
+2316c26 feat: adiciona fundacao segura do platform admin
+4c8aebd fix: unifica experiencia de carregamento
+bc303f6 feat: adiciona cancelamento por no-show estruturado
+fe505ec fix: adiciona rollback por tenant e sessao server-side
+e47ffa5 feat: conclui auditoria validacao e readiness multi-tenant
+89edb3b fix: corrige agenda do cliente loading e expiracao de sessao
+18f55c4 fix: corrige agenda do cliente loading e expiracao de sessao
+ccfdc8d feat: conclui microinteracoes e reforca seguranca do sistema
+14f8467 feat: adiciona loading global com tesoura entre telas
+2abbf21 fix: corrige renderizacao admin e melhora login e loading
+
+==== git remote -v ====
+origin	https://github.com/SevilhaBarbearia/barbearia-sevilha.git (fetch)
+origin	https://github.com/SevilhaBarbearia/barbearia-sevilha.git (push)
+
+==== node / npm versions ====
+v24.13.1
+11.8.0
+
+==== package.json — name/engines/scripts ====
+{
+  "name": "sevilha-barbearia",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/*.test.mjs",
+    "test:admin": "node --test tests/admin-policy.test.mjs",
+    "test:ownership": "node --test tests/customer-ownership.test.mjs",
+    "test:release": "node --test tests/release-readiness.test.mjs",
+    "test:rollout": "node --test tests/tenant-ui-rollout.test.mjs",
+    "test:platform": "node --test tests/platform-security.test.mjs",
+    "validate": "npm run typecheck && npm test && npm run build",
+    "release:check": "npm run test:rollout && npm run test:platform && npm run validate",
+    "smoke:prod": "node scripts/smoke-production.mjs",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" next.config.ts",
+    "test:db": "node tests/database.test.mjs"
+  }
+}
+
+==== src/ — diretorios ate 2 niveis ====
+src
+src/app
+src/app/[slug]
+src/app/admin
+src/app/api
+src/app/auth
+src/app/completar-cadastro
+src/app/login
+src/app/plataforma
+src/app/reservar
+src/components
+src/components/admin
+src/components/agendamento
+src/components/brand
+src/components/forms
+src/components/layout
+src/components/ui
+src/features
+src/features/appointments
+src/features/availability
+src/features/customers
+src/features/feedback
+src/features/loyalty
+src/features/platform
+src/features/settings
+src/features/storage
+src/features/tenancy
+src/lib
+src/lib/actions
+src/lib/admin
+src/lib/agendamentos
+src/lib/auth
+src/lib/db
+src/lib/supabase
+src/lib/theme
+
+==== src/app — page.tsx / route.ts (ate 5 niveis) ====
+src/app/[slug]/avaliar/[token]/page.tsx
+src/app/[slug]/cliente/agendamentos/page.tsx
+src/app/[slug]/cliente/fidelidade/page.tsx
+src/app/[slug]/cliente/historico/page.tsx
+src/app/[slug]/cliente/perfil/page.tsx
+src/app/[slug]/completar-cadastro/page.tsx
+src/app/[slug]/login/page.tsx
+src/app/[slug]/page.tsx
+src/app/[slug]/reservar/page.tsx
+src/app/admin/[slug]/agenda/page.tsx
+src/app/admin/[slug]/barbeiros/page.tsx
+src/app/admin/[slug]/configuracoes/page.tsx
+src/app/admin/[slug]/faturamento/page.tsx
+src/app/admin/[slug]/fidelidade/page.tsx
+src/app/admin/[slug]/horarios/page.tsx
+src/app/admin/[slug]/pagamentos/page.tsx
+src/app/admin/[slug]/page.tsx
+src/app/admin/[slug]/reservas/page.tsx
+src/app/admin/[slug]/satisfacao/page.tsx
+src/app/admin/[slug]/servicos/page.tsx
+src/app/admin/login/page.tsx
+src/app/admin/page.tsx
+src/app/admin/selecionar/page.tsx
+src/app/api/auth/activity/route.ts
+src/app/api/horarios-disponiveis/route.ts
+src/app/auth/callback/route.ts
+src/app/completar-cadastro/page.tsx
+src/app/login/page.tsx
+src/app/page.tsx
+src/app/plataforma/page.tsx
+src/app/reservar/page.tsx
+
+==== src/features — arquivos ====
+src/features/appointments/admin-actions.ts
+src/features/availability/cache.ts
+src/features/availability/next-slot.ts
+src/features/customers/actions.ts
+src/features/feedback/actions.ts
+src/features/loyalty/actions.ts
+src/features/loyalty/customer-actions.ts
+src/features/platform/actions.ts
+src/features/platform/server.ts
+src/features/settings/actions.ts
+src/features/storage/actions.ts
+src/features/tenancy/server.ts
+
+==== src/lib — arquivos ====
+src/lib/actions/form-action.ts
+src/lib/admin/actions.ts
+src/lib/admin/schemas.ts
+src/lib/agendamentos/actions.ts
+src/lib/agendamentos/schemas.ts
+src/lib/auth/admin-actions.ts
+src/lib/auth/admin-policy.ts
+src/lib/auth/auth-provider.tsx
+src/lib/auth/permissoes.ts
+src/lib/auth/provider-settings.ts
+src/lib/dates.ts
+src/lib/db/types.ts
+src/lib/supabase/client.ts
+src/lib/supabase/public-server.ts
+src/lib/supabase/server.ts
+src/lib/theme/obter-paleta-tenant.ts
+src/lib/theme/paleta-marca.ts
+src/lib/ui-rollout.ts
+src/lib/utils.ts
+
+==== src/components — arquivos ====
+src/components/admin/AdminModal.module.css
+src/components/admin/AdminModal.tsx
+src/components/admin/AdminNav.tsx
+src/components/admin/AgendaBoard.tsx
+src/components/admin/AppointmentOutcomeActions.tsx
+src/components/admin/CompleteAppointmentModal.tsx
+src/components/admin/DashboardCharts.tsx
+src/components/admin/ReservationsBoard.tsx
+src/components/agendamento/SeletorHorario.tsx
+src/components/brand/Logo.tsx
+src/components/brand/PlatformBrand.tsx
+src/components/forms/ActionForm.tsx
+src/components/forms/AdminLoginForm.tsx
+src/components/forms/BotaoSubmit.tsx
+src/components/forms/CompletarCadastroForm.tsx
+src/components/forms/FeedbackForm.tsx
+src/components/forms/ImageField.tsx
+src/components/forms/LoginGoogleButton.tsx
+src/components/forms/PagamentoPresencialForm.tsx
+src/components/forms/ReservaForm.tsx
+src/components/layout/AdminSidebar.tsx
+src/components/layout/ClienteSidebar.tsx
+src/components/layout/NavPublica.tsx
+src/components/ui/AppRouteLoader.module.css
+src/components/ui/AppRouteLoader.tsx
+src/components/ui/Badge.tsx
+src/components/ui/Button.tsx
+src/components/ui/Card.tsx
+src/components/ui/Input.tsx
+src/components/ui/NavigationLoadingBar.tsx
+src/components/ui/RouteErrorState.tsx
+
+==== supabase/migrations ====
+001_schema.sql
+002_rls.sql
+003_functions.sql
+004_admin_crud_grants.sql
+005_branding_sevilha.sql
+006_expediente_padrao_todos_os_dias.sql
+007_expediente_segunda_a_sabado_sem_domingo.sql
+008_acesso_administrativo.sql
+009_saas_multitenant.sql
+009_whitelabel_business_settings.sql
+010_saas_rls.sql
+011_loyalty_notifications_feedback.sql
+012_storage_multitenant.sql
+013_security_audit_rate_limit.sql
+014_appointment_functions.sql
+015_integrity_and_permissions.sql
+016_availability.sql
+017_notification_queue.sql
+018_customer_profile.sql
+019_local_blocks.sql
+020_day_bounds.sql
+021_report_totals.sql
+022_customer_appointment_overlap.sql
+023_guest_booking_and_slot_interval.sql
+024_admin_atomic_completion.sql
+025_security_hardening.sql
+026_customer_appointment_ownership.sql
+027_audit_fixes_rollout_and_sessions.sql
+028_structured_no_show.sql
+029_platform_admin_foundation.sql
+
+==== supabase/functions ====
+supabase/functions/process-notifications/deno.json
+supabase/functions/process-notifications/handler.ts
+supabase/functions/process-notifications/handler_test.ts
+supabase/functions/process-notifications/index.ts
+
+==== supabase/setup e supabase/verification ====
+supabase/setup/demo_tenant.sql
+supabase/setup/notifications_cron.sql
+supabase/verification/platform_foundation_readiness.sql
+supabase/verification/release_readiness.sql
+supabase/verification/tenant_ui_rollback.sql
+
+==== supabase/config.toml — project_id ====
+project_id = "barbearia-sevilha"
+
+==== Supabase CLI — versao e migrations linkadas ====
+(supabase CLI nao instalado no PATH)
+
+==== tests/ ====
+admin-policy.test.mjs
+customer-ownership.test.mjs
+database.test.mjs
+hardening.test.mjs
+no-show-readiness.test.mjs
+platform-security.test.mjs
+release-readiness.test.mjs
+server-session.test.mjs
+tenant-ui-rollout.test.mjs
+
+==== docs/ ====
+ACESSO_ADMINISTRATIVO.md
+ARQUIVOS_ALTERADOS.md
+DEPLOY.md
+GUIA_WHITELABEL.md
+MIGRACAO_SAAS.md
+PRIVACY_BACKLOG.md
+ROLLOUT_UI.md
+SECOND_TENANT_CANARY.md
+VALIDACAO.md
+
+==== Arquivos ligados a plataforma/platform ====
+src/app/plataforma
+src/app/plataforma/page.tsx
+src/features/platform
+src/features/platform/actions.ts
+src/features/platform/server.ts
+
+==== src/features/platform/server.ts ====
+import {
+  notFound,
+  redirect,
+} from "next/navigation";
+
+import { obterAdministradorAtual } from "@/lib/auth/permissoes";
+
+/**
+ * Eu mantenho a autorização da plataforma separada da autorização do tenant.
+ *
+ * Esta função NÃO transforma o Platform Admin em owner/manager e não concede
+ * acesso ao painel operacional de nenhuma barbearia.
+ */
+export async function requirePlatformAdmin() {
+  const admin =
+    await obterAdministradorAtual();
+
+  if (!admin) {
+    redirect(
+      `/admin/login?next=${encodeURIComponent(
+        "/plataforma",
+      )}`,
+    );
+  }
+
+  if (
+    !admin.profile
+      .is_platform_admin
+  ) {
+    notFound();
+  }
+
+  return admin;
+}
+
+==== src/lib/auth/permissoes.ts ====
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import { permiteAdministracao } from "./admin-policy";
+import type { Profile } from "@/lib/db/types";
+
+async function sessaoAplicacaoAtiva(
+  supabase: Awaited<
+    ReturnType<typeof createClient>
+  >,
+) {
+  const {
+    data: active,
+    error,
+  } = await supabase.rpc(
+    "check_current_app_session",
+  );
+
+  if (
+    error ||
+    active !== true
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+export async function obterUsuarioAtual() {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getUser();
+
+  if (!data.user) {
+    return {
+      user: null,
+      profile: null,
+    };
+  }
+
+  /*
+   * A sessão do Supabase, sozinha, não é mais suficiente.
+   * O servidor também precisa confirmar que esta sessão específica
+   * teve atividade humana dentro dos últimos 30 minutos.
+   */
+  const active =
+    await sessaoAplicacaoAtiva(
+      supabase,
+    );
+
+  if (!active) {
+    try {
+      await supabase.auth.signOut({
+        scope: "local",
+      });
+    } catch {
+      /*
+       * Mesmo se o Auth remoto estiver temporariamente indisponível,
+       * eu não aceito a sessão vencida como autenticada na aplicação.
+       */
+    }
+
+    return {
+      user: null,
+      profile: null,
+    };
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", data.user.id)
+    .single<Profile>();
+
+  return {
+    user: data.user,
+    profile,
+  };
+}
+
+export async function exigirUsuario(
+  slug?: string,
+) {
+  const { user, profile } = await obterUsuarioAtual();
+
+  if (!user) {
+    redirect(
+      slug
+        ? `/${encodeURIComponent(slug)}/login`
+        : "/login",
+    );
+  }
+
+  return { user, profile };
+}
+
+export async function exigirPerfilCompleto(
+  slug?: string,
+) {
+  const { user, profile } = await exigirUsuario(slug);
+
+  if (!profile?.phone || !profile?.full_name) {
+    redirect(
+      slug
+        ? `/${encodeURIComponent(slug)}/completar-cadastro`
+        : "/completar-cadastro",
+    );
+  }
+
+  return { user, profile };
+}
+
+export async function obterAdministradorAtual() {
+  const { user, profile } = await obterUsuarioAtual();
+
+  if (
+    !user ||
+    profile?.role !== "admin" ||
+    !profile.is_active
+  ) {
+    return null;
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.auth.getClaims();
+
+  if (
+    error ||
+    !permiteAdministracao(
+      user.id,
+      profile,
+      data?.claims,
+    )
+  ) {
+    return null;
+  }
+
+  return { user, profile };
+}
+
+export async function exigirAdmin() {
+  const admin = await obterAdministradorAtual();
+
+  if (!admin) {
+    redirect("/admin/login");
+  }
+
+  return admin;
+}
+
+export function podeGerenciarAgenda(
+  role?: string | null,
+) {
+  return (
+    role === "admin" ||
+    role === "barber"
+  );
+}
+
+==== src/app/plataforma — arquivos e conteudo ====
+--- src/app/plataforma/page.tsx ---
+import { ActionForm } from "@/components/forms/ActionForm";
+import { Button } from "@/components/ui/Button";
+import {
+  Card,
+  CardDescription,
+  CardTitle,
+} from "@/components/ui/Card";
+import {
+  Input,
+  Label,
+  Select,
+} from "@/components/ui/Input";
+import { createBarbershop as createBarbershopResult } from "@/features/platform/actions";
+import { requirePlatformAdmin } from "@/features/platform/server";
+import { asFormAction } from "@/lib/actions/form-action";
+import { createClient } from "@/lib/supabase/server";
+
+const createBarbershop =
+  asFormAction(
+    createBarbershopResult,
+  );
+
+export default async function PlatformPage() {
+  await requirePlatformAdmin();
+
+  const supabase =
+    await createClient();
+
+  /*
+   * Esta tela ainda é o esqueleto existente.
+   * O dashboard completo será construído no próximo pacote.
+   *
+   * A leitura comercial é permitida ao Platform Admin pela RLS.
+   */
+  const { data } =
+    await supabase
+      .from("barbershops")
+      .select(
+        `
+          *,
+          subscriptions (
+            status,
+            trial_started_at,
+            trial_ends_at,
+            plans (
+              name
+            )
+          )
+        `,
+      )
+      .order(
+        "created_at",
+        {
+          ascending: false,
+        },
+      );
+
+  const {
+    data: organizations,
+  } = await supabase
+    .from("organizations")
+    .select("id,name")
+    .order("name");
+
+  return (
+    <main className="fundo-premium min-h-screen px-4 py-10">
+      <div className="mx-auto grid max-w-5xl gap-4">
+        <h1 className="text-3xl font-black text-white">
+          Administração da plataforma
+        </h1>
+
+        <Card>
+          <CardTitle>
+            Nova barbearia
+          </CardTitle>
+
+          <CardDescription>
+            Crie previamente a conta do proprietário com e-mail e senha no
+            Supabase Auth. Novos tenants recebem trial de 15 dias. Trials já
+            existentes não são alterados.
+          </CardDescription>
+
+          <ActionForm
+            action={
+              createBarbershop
+            }
+            className="mt-5 grid gap-4 md:grid-cols-3"
+          >
+            <div>
+              <Label>
+                Nome
+              </Label>
+
+              <Input
+                name="name"
+                required
+              />
+            </div>
+
+            <div>
+              <Label>
+                Slug
+              </Label>
+
+              <Input
+                name="slug"
+                placeholder="barbearia-imperial"
+                required
+              />
+            </div>
+
+            <div>
+              <Label>
+                E-mail do proprietário
+              </Label>
+
+              <Input
+                name="owner_email"
+                type="email"
+                required
+              />
+            </div>
+
+            <div>
+              <Label>
+                Organização
+              </Label>
+
+              <Select name="organization_id">
+                <option value="">
+                  Nova organização
+                </option>
+
+                {organizations?.map(
+                  (org) => (
+                    <option
+                      key={
+                        org.id
+                      }
+                      value={
+                        org.id
+                      }
+                    >
+                      {
+                        org.name
+                      }
+                    </option>
+                  ),
+                )}
+              </Select>
+            </div>
+
+            <div>
+              <Button>
+                Criar barbearia
+              </Button>
+            </div>
+          </ActionForm>
+        </Card>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          {data?.map(
+            (barbershop) => (
+              <Card
+                key={
+                  barbershop.id
+                }
+              >
+                <CardTitle>
+                  {
+                    barbershop.name
+                  }
+                </CardTitle>
+
+                <CardDescription>
+                  /
+                  {
+                    barbershop.slug
+                  }{" "}
+                  •{" "}
+                  {
+                    barbershop
+                      .subscriptions
+                      ?.status ||
+                    "sem plano"
+                  }
+                </CardDescription>
+              </Card>
+            ),
+          )}
+        </div>
+      </div>
+    </main>
+  );
+}
+
+==== Busca por fila virtual (queue|fila|waiting|called|in_service) ====
+docs/ARQUIVOS_ALTERADOS.md
+docs/MIGRACAO_SAAS.md
+supabase/functions/process-notifications/handler.ts
+supabase/functions/process-notifications/handler_test.ts
+supabase/migrations/011_loyalty_notifications_feedback.sql
+supabase/migrations/014_appointment_functions.sql
+tests/database.test.mjs
+
+==== Busca por 028/029 e is_platform_admin ====
+docs/ACESSO_ADMINISTRATIVO.md
+src/app/[slug]/cliente/agendamentos/page.tsx
+src/features/platform/server.ts
+src/features/tenancy/server.ts
+src/lib/db/types.ts
+supabase/migrations/009_saas_multitenant.sql
+supabase/migrations/010_saas_rls.sql
+supabase/migrations/014_appointment_functions.sql
+supabase/migrations/015_integrity_and_permissions.sql
+supabase/migrations/028_structured_no_show.sql
+supabase/migrations/029_platform_admin_foundation.sql
+supabase/verification/platform_foundation_readiness.sql
+supabase/verification/release_readiness.sql
+tests/database.test.mjs
+tests/no-show-readiness.test.mjs
+tests/platform-security.test.mjs
+
+==== Env vars referenciadas no codigo ====
+APP_BASE_URL
+NEXT_PUBLIC_SITE_URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY
+NEXT_PUBLIC_SUPABASE_URL
+RESEND_API_KEY
+SUPABASE_SERVICE_ROLE_KEY
+SUPABASE_URL
+UI_FORCE_LEGACY
+
+==== Presenca de .env (sem conteudo) ====
+.env ausente
+.env.local existe
+.env.production ausente
+.env.edge ausente
+
+==== .gitignore — linhas com env ====
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.edge
+
+==== Resumo ====
+OK — saida em _coleta-estado-inicial.txt

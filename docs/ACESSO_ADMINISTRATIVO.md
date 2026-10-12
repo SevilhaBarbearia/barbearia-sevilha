@@ -1,6 +1,6 @@
 # Acesso administrativo
 
-Clientes entram com Google em `/{slug}/login`. Proprietários e gestores usam e-mail e senha em `/admin/login`. Uma sessão Google não concede poderes administrativos.
+Clientes entram com Google em `/{slug}/login`. Proprietários e gestores usam e-mail e senha em `/admin/login`. O Platform Admin tem login próprio em `/plataforma/login`. Uma sessão Google não concede poderes administrativos.
 
 ## Primeiro administrador da plataforma
 
@@ -14,6 +14,8 @@ where id = 'UUID_DA_SUA_CONTA'::uuid;
 
 Confirme que exatamente a conta desejada foi atualizada. A promoção administrativa nunca é feita pelo formulário público.
 
+O acesso do Platform Admin passa por `/plataforma/login` e exige autenticação por senha. Um Platform Admin não é owner/manager de nenhum tenant automaticamente. Se a mesma pessoa também administrar uma barbearia, ela precisa de membership própria em `/admin/login`.
+
 ## Sevilha existente
 
 A migration `009` associa os perfis administrativos ativos anteriores à Sevilha. O primeiro Platform Admin precisa ser promovido separadamente pelo SQL acima.
@@ -21,7 +23,7 @@ A migration `009` associa os perfis administrativos ativos anteriores à Sevilha
 ## Nova barbearia e unidades
 
 1. Crie a conta do proprietário com e-mail e senha em Supabase Auth.
-2. Entre em `/plataforma` com sua conta administrativa.
+2. Entre em `/plataforma/login` com sua conta administrativa.
 3. Preencha nome, slug e o e-mail cadastrado no Auth.
 4. Escolha “Nova organização” para uma nova empresa ou a organização existente para outra unidade do mesmo dono.
 5. Entregue `/{slug}` e `/admin/{slug}`.

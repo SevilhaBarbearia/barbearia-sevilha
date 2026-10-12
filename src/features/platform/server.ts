@@ -1,32 +1,31 @@
-import {
-  notFound,
-  redirect,
-} from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
-import { obterAdministradorAtual } from "@/lib/auth/permissoes";
+import { obterPlatformAdminAtual } from "@/lib/auth/platform-permissoes";
 
 /**
- * Eu mantenho a autorização da plataforma separada da autorização do tenant.
+ * Eu mantenho a autorizacao da plataforma separada da autorizacao do tenant.
  *
- * Esta função NÃO transforma o Platform Admin em owner/manager e não concede
+ * Esta funcao NAO transforma o Platform Admin em owner/manager e nao concede
  * acesso ao painel operacional de nenhuma barbearia.
+ *
+ * O login e independente: usuario sem sessao e enviado para
+ * /plataforma/login, nunca para /admin/login.
  */
 export async function requirePlatformAdmin() {
-  const admin =
-    await obterAdministradorAtual();
+  const admin = await obterPlatformAdminAtual();
 
   if (!admin) {
     redirect(
-      `/admin/login?next=${encodeURIComponent(
-        "/plataforma",
-      )}`,
+      `/plataforma/login?next=${encodeURIComponent("/plataforma")}`,
     );
   }
 
-  if (
-    !admin.profile
-      .is_platform_admin
-  ) {
+  /*
+   * Defesa em profundidade: obterPlatformAdminAtual ja verifica
+   * is_platform_admin. Reforcamos aqui para nao depender de um unico
+   * ponto de checagem caso a funcao mude no futuro.
+   */
+  if (!admin.profile.is_platform_admin) {
     notFound();
   }
 
