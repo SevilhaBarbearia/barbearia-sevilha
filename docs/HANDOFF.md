@@ -1,145 +1,86 @@
 # Handoff técnico — Sevilha SaaS
 
-**Atualizado:** 13/10/2026
-**Branch:** `main`
-**HEAD:** `5cd1e9c`
+**Atualizado:** 13/10/2026 · **HEAD:** ac7ab98 · **Branch:** main
 
-## 1. Resumo
+## Estado real
 
-Plataforma multi-tenant de barbearias. Next.js + TS + Supabase/PostgreSQL + Vercel. Fila virtual é o objetivo central, ainda não implementada. Onboarding seguro de tenant é a próxima sprint prioritária.
+- Repo: github.com/SevilhaBarbearia/barbearia-sevilha
+- Produção: barbearia-app-agenda-six.vercel.app
+- Testes: 52/52 verdes
+- Banco: migrations 001–033 aplicadas
 
-## 2. Estado real
-
-- Repositório: github.com/SevilhaBarbearia/barbearia-sevilha
-- Deploy produção: barbearia-app-agenda-six.vercel.app
-- Testes: **52/52 verdes** (`npm test`)
-- Banco: migrations 001–032 aplicadas (`032_platform_admin_edit_tenant`)
-
-## 3. Blocos concluídos
+## Concluído nesta sessão
 
 | Bloco | Descrição | Banco | Git |
 |---|---|---|---|
-| 029 | Fundação Platform Admin | sim | sim |
-| 030 | Fecha account takeover em guest booking | sim | sim |
-| 031 | Exige e-mail confirmado no claim | sim | sim |
-| 032 | Platform Admin edita tenant + upload de logo | sim | sim |
+| 030 | Fix account takeover guest booking | sim | sim |
+| 031 | E-mail confirmado no claim | sim | sim |
+| 032 | Platform Admin edita tenant + logo | sim | sim |
+| 033 | Onboarding por convite | sim | sim |
 | — | Login independente `/plataforma/login` | — | sim |
-| — | Baseline Playwright (mobile + desktop) | — | sim |
-| — | Tokens de design (`src/app/tokens.css`) | — | sim |
-| — | Redesign `/plataforma` no padrão admin | — | sim |
-| — | KPIs + tabela densa + modal de novo tenant | — | sim |
-| — | Edição de tenant com upload de logo processado no cliente | — | sim |
+| — | Redesign `/plataforma` (KPIs + tabela + modal) | — | sim |
+| — | Modal responsivo (mobile/tablet/desktop) | — | sim |
+| — | `/primeiro-acesso` (define senha via convite) | — | sim |
+| — | Modal "Links" por tenant na `/plataforma` | — | sim |
+| — | Fix `/api/auth/activity` (cria sessão no 1º acesso) | — | sim |
+| — | Playwright baseline (mobile + desktop) | — | sim |
+| — | Tokens `src/app/tokens.css` | — | sim |
+| — | Docs consolidados (PRD, SYS, README, CHANGELOG, HANDOFF, PROTOCOLO) | — | sim |
 
-## 4. Blocos pendentes
+## Pendente
 
-| Bloco | Descrição | Prioridade |
-|---|---|---|
-| Onboarding seguro | Convite em vez de senha temporária | **P0** |
-| 033 | Rate limit em booking (modo sombra, fail-open) | P1 |
-| 034 | Expiração de `pending` guest (modo sombra) | P1 |
-| Fila virtual | Discovery + modelagem | P0 (após onboarding) |
-| Design system | Aplicar tokens em todos os componentes | P2 |
-| LGPD | Retenção, exclusão, anonimização, DPA | P2 |
-| Docs | Política de privacidade + termos de uso | P2 |
+| Item | Prioridade |
+|---|---|
+| Botão "Trocar e-mail de login" na `/plataforma/[slug]` | P1 |
+| Botão "Gerar link de recuperação" (dono esqueceu senha) | P1 |
+| P2 responsividade — `/admin/{slug}` | P1 |
+| P3 responsividade — `/{slug}` e `/{slug}/cliente` | P2 |
+| P4 responsividade — `/plataforma/[slug]` | P2 |
+| Bloco 034 — rate limit booking (modo sombra) | P2 |
+| Bloco 035 — expiração `pending` guest (modo sombra) | P2 |
+| Fila virtual — discovery | P0 cliente |
+| LGPD — política de privacidade + termos + DPA | P2 |
+| Aplicar `ui_version = 'dark-premium'` como terceira opção | P3 |
 
-## 5. Migrations aplicadas
+## Fluxo de onboarding de tenant (novo)
 
-001–032. Destaques:
-- `028_structured_no_show.sql`
-- `029_platform_admin_foundation.sql`
-- `030_fix_guest_booking_takeover.sql`
-- `031_endurecer_claim_identity.sql`
-- `032_platform_admin_edit_tenant.sql`
+1. Admin em `/plataforma` → **Nova barbearia** → 3 campos (nome, slug, e-mail do dono).
+2. Sistema cria tenant + RPC `platform_create_tenant_pending_owner` + `auth.admin.generateLink({ type: 'invite' })`.
+3. Modal mostra 3 links: **convite**, **painel admin**, **página pública**.
+4. Admin copia link de convite → manda por WhatsApp.
+5. Dono clica → `/primeiro-acesso` → define senha → entra em `/admin/{slug}`.
 
-Rollbacks em `supabase/rollbacks/` (não são migrations).
+**Um e-mail = um dono de tenant.** Índice único parcial em `barbershop_members`.
 
-## 6. RPCs e funções relevantes
+## RPCs e funções relevantes
 
-- `create_barbershop_with_owner` (029) — cria tenant + associa dono existente. **Exige que a conta do dono já exista em `auth.users`.**
-- `platform_change_subscription` (029) — muda plano/status com motivo obrigatório.
-- `platform_set_feature_override` / `platform_clear_feature_override` (029).
-- `platform_set_ui_version` (029).
-- `platform_open_support_session` / `platform_close_support_session` (029).
-- `platform_update_barbershop` (032) — edita nome/slug/e-mail/logo do tenant.
-- `write_platform_audit` (029) — auditoria de ações do Platform Admin.
-- `book_guest_appointment` (023) — reserva sem conta, corrigida pela 030.
-- `claim_my_guest_appointments` (026) — endurecida pela 031.
-- `is_platform_admin` (010) — exige `is_platform_admin` + sessão por senha.
+- `create_barbershop_with_owner` (029) — fluxo antigo, ainda existe
+- `platform_create_tenant_pending_owner` (033) — novo, sem exigir dono existente
+- `handle_new_user` (033) — ativa `barbershop_members` se convite pendente
+- `platform_change_subscription`, `platform_set_feature_override`, `platform_set_ui_version`, `platform_open_support_session`, `platform_update_barbershop` (029/032)
+- `write_platform_audit` (029) — **exige** `is_platform_admin()`. Não usar em triggers de Auth
+- `is_platform_admin` (010) — exige `is_platform_admin` + sessão por senha
+- `book_guest_appointment` (023/030) — sem sobrescrever identidade existente
+- `claim_my_guest_appointments` (026/031) — exige `email_confirmed_at`
 
-## 7. Autenticação
+## ADRs
 
-- **Cliente:** Google OAuth + guest (nome + telefone, e-mail opcional).
-- **Admin de tenant:** e-mail/senha. Guard `obterAdministradorAtual`.
-- **Platform Admin:** `/plataforma/login` com guard próprio `obterPlatformAdminAtual`. Não exige `role='admin'`. Não dá acesso operacional a tenant.
-- **Sessão:** 30 min de inatividade, `check_current_app_session`, access token 1800s.
+001 Banco + RLS · 002 RPCs transacionais · 003 Sem checkout online · 004 Guest com e-mail confirmado · 005 Sessão 30min · 006 Platform Admin independente · 007 Fila virtual separada · 008 Resend (pendente config) · 009 `ui_version` por tenant · 010 Onboarding por convite
 
-## 8. Fila virtual (pendente)
+## Variáveis e segredos
 
-**Estados propostos:** `waiting → called → in_service → completed` (+ `canceled`, `no_show`).
+- Web: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SITE_URL`, `UI_FORCE_LEGACY`
+- Server-only: `SUPABASE_SERVICE_ROLE_KEY` (Vercel + `.env.local`)
+- Edge Function: `RESEND_API_KEY`, `EMAIL_FROM`, `APP_BASE_URL`
+- Vault cron: `barbershop_project_url`, `barbershop_service_role_key`
 
-**Decisões em aberto (10 perguntas):**
-1. Fila por unidade, barbeiro ou serviço?
-2. Reserva entra automaticamente na fila após check-in?
-3. Walk-in sem agendamento entra?
-4. Ordem entre agendado e chegada?
-5. Prioridade manual? Quem autoriza?
-6. Tolerância após chamada?
-7. Posição e tempo estimado visíveis ao público?
-8. Cliente atrasado ou que não responde?
-9. Reentrada ou nova entrada?
-10. Canais de aviso (WhatsApp, e-mail) e consentimento?
+## Pontos de atenção
 
-**Arquitetura proposta:** tabelas próprias (`queue_entries`, `queue_events`); RPCs transacionais; eventos auditáveis; Supabase Realtime como transporte (banco é a fonte); posição atômica no banco; idempotência; RLS; UI mobile-first.
+- Logs de server action aparecem no **terminal**, não no browser.
+- Token de convite: **não abrir no mesmo navegador** com sessão ativa da plataforma.
+- `set session_replication_role = replica` antes de `delete from barbershops` (evita FK em `audit_logs`).
+- Migration que toca `auth.users` → ajustar fixture PGlite no mesmo commit.
 
-## 9. Onboarding seguro de tenant
+## Prompt para próxima IA
 
-Detalhes em `docs/SPRINT-ONBOARDING.md`. Resumo:
-- Convite por e-mail (`inviteUserByEmail`), sem senha temporária.
-- Ordem: tenant primeiro (transação), convite depois.
-- Fila de e-mail com retry (`outbound_notifications`), não envio síncrono.
-- Feature flag para rodar em paralelo ao fluxo manual.
-- Pendências: SMTP próprio (ou aceitar limitação do relay Supabase), DPA, política de privacidade.
-
-## 10. ADRs
-
-- **001** Banco compartilhado + RLS.
-- **002** RPCs para transições.
-- **003** Sem checkout online.
-- **004** Guest com identidade limitada (e-mail confirmado a partir da 031).
-- **005** Sessão 30min server-side.
-- **006** Platform Admin independente.
-- **007** Fila virtual separada.
-- **008** Notificações assíncronas via Resend.
-- **009** `ui_version` por tenant (`legacy`, `warm-premium`, futuramente `dark-premium`).
-- **010** Onboarding por convite, sem senha temporária.
-
-## 11. Próximos passos
-
-1. **Sprint de onboarding seguro** (P0) — ver `docs/SPRINT-ONBOARDING.md`.
-2. **Fila virtual** — discovery das 10 perguntas antes de qualquer migration.
-3. **Blocos 033/034** (P1) — rate limit e expiração em modo sombra.
-4. **LGPD** — ler `docs/PRIVACY_BACKLOG.md`, montar plano com DPA, política e termos.
-5. **Design system** — aplicar tokens (`src/app/tokens.css`) em todos os componentes.
-
-## 12. Variáveis e segredos
-
-**Web:** `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SITE_URL`, `UI_FORCE_LEGACY`.
-
-**Edge Function:** `RESEND_API_KEY`, `EMAIL_FROM`, `APP_BASE_URL`.
-
-**Vault (cron):** `barbershop_project_url`, `barbershop_service_role_key`.
-
-**Nunca** colocar segredo sob prefixo `NEXT_PUBLIC_`.
-
-## 13. Pontos de atenção
-
-- Banco real pode divergir das migrations. Sempre verificar antes de aplicar.
-- Fila de e-mail ≠ fila virtual.
-- `canceled_at` isolado não distingue cancelamento comum de no-show — usar `status` e `no_show_at`.
-- Trial: 15 dias para novos tenants.
-- Trabalhar na `main`, blocos agrupados, migrations separadas, tag `pre-bloco-N` antes de cada bloco.
-- Toda migration que toca `auth.users` exige ajuste no fixture PGlite no mesmo commit.
-
-## 14. Prompt para próxima IA
-
-> Continue o projeto verificando estado atual do repositório e do banco antes de alterar. Leia `docs/PROTOCOLO.md`, `docs/HANDOFF.md` e `docs/SPRINT-ONBOARDING.md`. Não invente comportamento. Fila virtual é objetivo central, mas feche as 10 decisões de produto antes de migration. Onboarding seguro é P0. Mantenha RLS, autorização por tenant, transações, eventos, idempotência, testes. Trabalhe direto na `main`; só declare testes verdes quando executar o gate no código atual.
+Continue o projeto verificando `docs/PROTOCOLO.md` e `docs/HANDOFF.md`. Prioridade: botões "Trocar e-mail" e "Gerar link de recuperação" na tela `/plataforma/[slug]`. Depois: responsividade P2 (`/admin/{slug}`). Trabalhe na `main`, blocos agrupados, tag `pre-bloco-N`, testes verdes antes de commitar. Fila virtual é o objetivo central, mas depende de discovery das 10 decisões de produto.

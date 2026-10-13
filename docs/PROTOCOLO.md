@@ -121,3 +121,22 @@ Erro é da IA. Corrige e segue. Se um teste falha por setup, é problema da IA, 
 - **Convite de usuário sem `inviteUserByEmail`** — sempre usar o fluxo nativo do Supabase Auth.
 - **Senha em texto** em e-mail, banco ou logs.
 - **`user_metadata` para controle de estado** — só `app_metadata` (service role).
+
+
+## 12. Regras da sessao atual
+
+- **Server actions logam no terminal, não no browser.** Sempre olhar o \`npm run dev\`.
+- **Nunca abrir link de convite na mesma sessão** onde se está logado como Platform Admin — o Supabase rejeita. Usar outro navegador ou janela anônima limpa.
+- **Limpar tenant/usuário antes de testar de novo**: \`set session_replication_role = replica\` antes de \`delete from barbershops\` (senão FK \`audit_logs_barbershop_id_fkey\` falha).
+- **\`write_platform_audit\` exige \`is_platform_admin()\`** — não chamar em trigger de Auth (o usuário ainda não tem sessão). Usar \`INSERT\` direto em \`platform_audit_logs\`.
+- **Migration que toca \`auth.users\`** exige ajuste no fixture PGlite **no mesmo commit**.
+- **Heredoc gigante embaralha no Git Bash** — sempre quebrar em blocos de ~50 linhas ou colar direto no SQL Editor.
+
+## 13. Estado do projeto (referência rápida)
+
+- Último HEAD conhecido: \`ac7ab98\`
+- Banco: migrations 001–033 aplicadas
+- Testes: 52/52
+- Plataforma redesenhada no padrão admin
+- Onboarding por convite funcional
+- Pendências principais em \`docs/HANDOFF.md\`
