@@ -1,127 +1,102 @@
-import Link from "next/link";
+import { Building2, CircleDot, Clock, TrendingUp } from "lucide-react";
 
-import { ActionForm } from "@/components/forms/ActionForm";
-import { Button } from "@/components/ui/Button";
-import { Card, CardDescription, CardTitle } from "@/components/ui/Card";
-import { Input, Label, Select } from "@/components/ui/Input";
-import { createBarbershop as createBarbershopResult } from "@/features/platform/actions";
+import { PlatformShell } from "@/components/platform/PlatformShell";
+import { KpiCard } from "@/components/platform/KpiCard";
+import { NewTenantModal } from "@/components/platform/NewTenantModal";
+import { TenantTable, type TenantRow } from "@/components/platform/TenantTable";
 import { requirePlatformAdmin } from "@/features/platform/server";
-import { asFormAction } from "@/lib/actions/form-action";
-import { sairPlatformAdmin } from "@/lib/auth/platform-actions";
 import { createClient } from "@/lib/supabase/server";
 
-const createBarbershop = asFormAction(createBarbershopResult);
+export const dynamic = "force-dynamic";
 
 export default async function PlatformPage() {
   await requirePlatformAdmin();
-
   const supabase = await createClient();
 
-  const { data } = await supabase
-    .from("barbershops")
-    .select(
-      `
-        *,
-        subscriptions (
-          status,
-          trial_started_at,
-          trial_ends_at,
-          plans (
-            name
+  const [shopsResult, membersResult] = await Promise.all([
+    supabase
+      .from("barbershops")
+      .select(
+        `
+          id, name, slug, is_active, archived_at, ui_version, created_at,
+          subscriptions (
+            status, trial_ends_at,
+            plans ( name )
           )
-        )
-      `,
-    )
-    .order("created_at", { ascending: false });
+        `,
+      )
+      .order("created_at", { ascending: false }),
 
-  const { data: organizations } = await supabase
-    .from("organizations")
-    .select("id,name")
-    .order("name");
+    supabase
+      .from("barbershop_members")
+      .select("barbershop_id")
+      .eq("is_active", true),
+  ]);
+
+  const membersByShop = new Map<string, number>();
+  for (const row of membersResult.data ?? []) {
+    membersByShop.set(
+      row.barbershop_id,
+      (membersByShop.get(row.barbershop_id) ?? 0) + 1,
+    );
+  }
+
+  const tenants: TenantRow[] = (shopsResult.data ?? []).map((shop) => {
+    const sub = Array.isArray(shop.subscriptions)
+      ? shop.subscriptions[0]
+      : shop.subscriptions;
+    const plan = Array.isArray(sub?.plans) ? sub?.plans[0] : sub?.plans;
+
+    return {
+      id: shop.id,
+      name: shop.name,
+      slug: shop.slug,
+      isActive: shop.is_active,
+      archivedAt: shop.archived_at,
+      uiVersion: shop.ui_version,
+      createdAt: shop.created_at,
+      planName: plan?.name ?? null,
+      status: sub?.status ?? null,
+      trialEndsAt: sub?.trial_ends_at ?? null,
+      membersCount: membersByShop.get(shop.id) ?? 0,
+    };
+  });
+
+  const naoArquivados = tenants.filter((t) => !t.archivedAt).length;
+  const ativos = tenants.filter(
+    (t) => t.status === "active" && !t.archivedAt,
+  ).length;
+  const emTrial = tenants.filter((t) => t.status === "trial").length;
+  const suspensos = tenants.filter((t) => t.status === "suspended").length;
 
   return (
-    <main className="fundo-premium min-h-screen px-4 py-10">
-      <div className="mx-auto grid max-w-5xl gap-4">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <h1 className="text-3xl font-black text-white">
-            Administracao da plataforma
-          </h1>
+    <PlatformShell current="tenants">
+      <div className="grid gap-6">
+        <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+          <div>
+            <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-amber-300">
+              Visão geral
+            </p>
+            <h1 className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl">
+              Barbearias
+            </h1>
+            <p className="mt-2 text-sm text-slate-400">
+              Gerencie tenants, planos, funcionalidades e sessões de suporte.
+            </p>
+          </div>
 
-          <form action={sairPlatformAdmin}>
-            <Button type="submit">Sair</Button>
-          </form>
-        </div>
+          <NewTenantModal />
+        </header>
 
-        <Card>
-          <CardTitle>Nova barbearia</CardTitle>
+        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <KpiCard label="Total" value={naoArquivados} detail="Cadastradas no sistema" icon={Building2} tone="amber" />
+          <KpiCard label="Ativos" value={ativos} detail="Com assinatura em dia" icon={CircleDot} tone="emerald" />
+          <KpiCard label="Em trial" value={emTrial} detail="Em período de teste" icon={Clock} tone="cyan" />
+          <KpiCard label="Suspensos" value={suspensos} detail="Requerem atenção" icon={TrendingUp} tone="red" />
+        </section>
 
-          <CardDescription>
-            Crie previamente a conta do proprietario com e-mail e senha no
-            Supabase Auth. Novos tenants recebem trial de 15 dias. Trials ja
-            existentes nao sao alterados.
-          </CardDescription>
-
-          <ActionForm
-            action={createBarbershop}
-            className="mt-5 grid gap-4 md:grid-cols-3"
-          >
-            <div>
-              <Label>Nome</Label>
-
-              <Input name="name" required />
-            </div>
-
-            <div>
-              <Label>Slug</Label>
-
-              <Input
-                name="slug"
-                placeholder="barbearia-imperial"
-                required
-              />
-            </div>
-
-            <div>
-              <Label>E-mail do proprietario</Label>
-
-              <Input name="owner_email" type="email" required />
-            </div>
-
-            <div>
-              <Label>Organizacao</Label>
-
-              <Select name="organization_id">
-                <option value="">Nova organizacao</option>
-
-                {organizations?.map((org) => (
-                  <option key={org.id} value={org.id}>
-                    {org.name}
-                  </option>
-                ))}
-              </Select>
-            </div>
-
-            <div>
-              <Button>Criar barbearia</Button>
-            </div>
-          </ActionForm>
-        </Card>
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          {data?.map((barbershop) => (
-            <Link key={barbershop.id} href={`/plataforma/${barbershop.slug}`}>
-              <Card className="h-full transition hover:border-[#B8873F]/40">
-                <CardTitle>{barbershop.name}</CardTitle>
-
-                <CardDescription>
-                  /{barbershop.slug} •{" "}
-                  {barbershop.subscriptions?.status || "sem plano"}
-                </CardDescription>
-              </Card>
-            </Link>
-          ))}
-        </div>
+        <TenantTable tenants={tenants} />
       </div>
-    </main>
+    </PlatformShell>
   );
 }

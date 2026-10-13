@@ -251,3 +251,51 @@ export async function encerrarSessaoSuporte(
   refresh(parsed.data.slug);
   return { ok: true, mensagem: "Sessao encerrada." };
 }
+
+/* ── 5. Dados cadastrais do tenant (nome, slug, e-mail, logo) ── */
+const updateTenantSchema = z.object({
+  slug: z.string().trim().min(1),
+  barbershop_id: z.string().uuid(),
+  name: z.string().trim().min(2).max(100),
+  new_slug: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+  email: z.string().trim().max(254).optional().default(""),
+  logo_url: z.string().trim().max(1000).optional().default(""),
+});
+
+export async function updateTenant(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requirePlatformAdmin();
+  const parsed = updateTenantSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { ok: false, mensagem: "Dados inválidos." };
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("platform_update_barbershop", {
+    target_barbershop_id: parsed.data.barbershop_id,
+    new_name: parsed.data.name,
+    new_slug: parsed.data.new_slug,
+    new_email: parsed.data.email || null,
+    new_logo_url: parsed.data.logo_url || null,
+  });
+
+  if (error) {
+    const m = error.message.toUpperCase();
+    if (m.includes("SLUG_TAKEN"))
+      return { ok: false, mensagem: "Já existe uma barbearia com esse slug." };
+    if (m.includes("INVALID_EMAIL"))
+      return { ok: false, mensagem: "E-mail inválido." };
+    if (m.includes("INVALID_DATA"))
+      return { ok: false, mensagem: "Verifique nome e slug." };
+    return { ok: false, mensagem: traduzErro(error.message) };
+  }
+
+  revalidatePath(`/plataforma/${parsed.data.slug}`);
+  revalidatePath(`/plataforma/${parsed.data.new_slug}`);
+  revalidatePath("/plataforma");
+  return { ok: true, mensagem: "Dados atualizados." };
+}
