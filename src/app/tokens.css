@@ -1,0 +1,63 @@
+/* ============================================================
+   Design tokens canônicos do sistema.
+   Valores atuais. Zero mudança visual.
+   Uso: importar em globals.css e consumir via var(--...).
+   ============================================================ */
+
+:root {
+  /* ── Raio (2 valores em todo o sistema) ── */
+  --radius-sm: 12px;   /* inputs, botões, chips, badges */
+  --radius-lg: 24px;   /* cards, seções, modais, imagens */
+
+  /* ── Sombra (2 valores) ── */
+  --shadow-card:     0 14px 40px rgba(0, 0, 0, 0.06);
+  --shadow-floating: 0 18px 55px rgba(0, 0, 0, 0.14);
+
+  /* ── Tipografia — interface ── */
+  --font-sans:    var(--font-manrope), system-ui, -apple-system, sans-serif;
+  --font-display: var(--font-manrope), system-ui, sans-serif;
+  --font-mono:    ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* ── Escala (máx. 5 tamanhos para interface, 2 para display) ── */
+  --text-xs:   0.75rem;   /*  12px */
+  --text-sm:   0.875rem;  /*  14px */
+  --text-base: 1rem;      /*  16px */
+  --text-lg:   1.125rem;  /*  18px */
+  --text-xl:   1.5rem;    /*  24px */
+  --text-2xl:  2rem;      /*  32px */
+  --text-3xl:  2.5rem;    /*  40px */
+
+  /* ── Entrelinha ── */
+  --leading-tight:   1.05;
+  --leading-snug:    1.25;
+  --leading-normal:  1.5;
+  --leading-relaxed: 1.75;
+
+  /* ── Peso (3 valores) ── */
+  --weight-regular: 400;
+  --weight-medium:  600;
+  --weight-bold:    800;
+
+  /* ── Transição (1 curva, 2 durações) ── */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-fast:   120ms;
+  --duration-normal: 200ms;
+}
+
+/* Warm premium — mantém os mesmos tokens.
+   Diferenças visuais continuam vindo de --surface, --text, --border
+   declaradas no globals.css. Aqui só reforçamos os tokens de forma. */
+[data-ui-version="warm-premium"] {
+  --radius-sm: 12px;
+  --radius-lg: 24px;
+
+  --shadow-card:     0 18px 50px rgba(59, 43, 24, 0.08);
+  --shadow-floating: 0 20px 55px rgba(59, 43, 24, 0.14);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast:   0ms;
+    --duration-normal: 0ms;
+  }
+}
