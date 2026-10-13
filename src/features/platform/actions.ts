@@ -178,9 +178,7 @@ export async function createTenantWithInvite(
     process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ??
     "http://localhost:3000";
 
-  const redirectTo = `${siteUrl}/auth/callback?next=${encodeURIComponent(
-    `/primeiro-acesso?slug=${parsed.data.slug}`,
-  )}`;
+  const redirectTo = `${siteUrl}/primeiro-acesso`;
 
   const admin = createAdminClient();
 
@@ -192,6 +190,7 @@ export async function createTenantWithInvite(
     });
 
   if (linkError) {
+    console.error("DEBUG: generateLink falhou", linkError);
     const m = linkError.message.toLowerCase();
     if (m.includes("already") && m.includes("registered")) {
       return {

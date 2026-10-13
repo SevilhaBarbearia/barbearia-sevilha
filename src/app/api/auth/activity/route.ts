@@ -5,8 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 
 export async function POST() {
-  const supabase =
-    await createClient();
+  const supabase = await createClient();
 
   const {
     data: { user },
@@ -14,55 +13,36 @@ export async function POST() {
 
   if (!user) {
     return NextResponse.json(
-      {
-        error:
-          "AUTH_REQUIRED",
-      },
-      {
-        status: 401,
-      },
+      { error: "AUTH_REQUIRED" },
+      { status: 401 },
     );
   }
 
-  const {
-    data: active,
-    error,
-  } = await supabase.rpc(
+  // Primeiro tenta registrar (atualiza last_activity_at).
+  const { data: touched, error: touchError } = await supabase.rpc(
     "touch_current_app_session",
   );
 
-  if (
-    error ||
-    active !== true
-  ) {
-    /*
-     * A sessão já ultrapassou o limite de inatividade ou o servidor
-     * não conseguiu validá-la. Eu encerro o refresh token deste navegador
-     * para que o timeout não seja apenas visual.
-     */
-    await supabase.auth.signOut({
-      scope: "local",
-    });
-
-    return NextResponse.json(
-      {
-        error:
-          "SESSION_EXPIRED",
-      },
-      {
-        status: 401,
-      },
+  // Se a sessão ainda não existe no banco (primeiro request após convite
+  // ou após migration 027), check_current_app_session cria a linha e
+  // devolve true. Isso evita logout indevido de sessões recém-criadas.
+  if (touchError || touched !== true) {
+    const { data: active, error: checkError } = await supabase.rpc(
+      "check_current_app_session",
     );
+
+    if (checkError || active !== true) {
+      await supabase.auth.signOut({ scope: "local" });
+
+      return NextResponse.json(
+        { error: "SESSION_EXPIRED" },
+        { status: 401 },
+      );
+    }
   }
 
-  return new NextResponse(
-    null,
-    {
-      status: 204,
-      headers: {
-        "Cache-Control":
-          "no-store",
-      },
-    },
-  );
+  return new NextResponse(null, {
+    status: 204,
+    headers: { "Cache-Control": "no-store" },
+  });
 }

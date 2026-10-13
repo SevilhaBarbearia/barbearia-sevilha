@@ -33,6 +33,11 @@ export default async function PlatformPage() {
       .eq("is_active", true),
   ]);
 
+  const siteUrl =
+    process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ??
+    "http://localhost:3000";
+
+
   const membersByShop = new Map<string, number>();
   for (const row of membersResult.data ?? []) {
     membersByShop.set(
@@ -59,8 +64,11 @@ export default async function PlatformPage() {
       status: sub?.status ?? null,
       trialEndsAt: sub?.trial_ends_at ?? null,
       membersCount: membersByShop.get(shop.id) ?? 0,
+      adminUrl: `${siteUrl}/admin/${shop.slug}`,
+      publicUrl: `${siteUrl}/${shop.slug}`,
     };
   });
+
 
   const naoArquivados = tenants.filter((t) => !t.archivedAt).length;
   const ativos = tenants.filter(
