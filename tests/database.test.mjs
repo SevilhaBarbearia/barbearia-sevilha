@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 const db = new PGlite({ extensions: { pgcrypto, btree_gist } });
 await db.exec(`create role anon; create role authenticated; create role service_role bypassrls;
 create schema auth; create schema storage; create schema extensions;
-create table auth.users(id uuid primary key,email text,phone text,raw_user_meta_data jsonb default '{}');
+create table auth.users(id uuid primary key,email text,phone text,raw_user_meta_data jsonb default '{}',email_confirmed_at timestamptz default now());
 create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
 create function auth.jwt() returns jsonb language sql stable as $$ select coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb $$;
 create function auth.role() returns text language sql stable as $$ select coalesce(nullif(current_setting('request.jwt.claim.role',true),''),current_user::text) $$;

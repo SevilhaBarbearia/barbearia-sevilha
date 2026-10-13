@@ -51,7 +51,7 @@ test(
           email text,
           phone text,
           raw_user_meta_data jsonb default '{}'
-        );
+        ,email_confirmed_at timestamptz default now());
 
         create function auth.uid()
         returns uuid
