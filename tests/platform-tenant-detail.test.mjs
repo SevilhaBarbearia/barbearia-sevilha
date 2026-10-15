@@ -11,7 +11,8 @@ function read(path) {
 
 test("cards de /plataforma sao Link para /plataforma/[slug]", () => {
   const src = read("src/app/plataforma/page.tsx");
-  assert.match(src, /<Link key=\{barbershop\.id\} href=\{`\/plataforma\/\$\{barbershop\.slug\}`\}>/);
+  assert.match(src, /<TenantTable tenants=\{tenants\} \/>/);
+  assert.match(read("src/components/platform/TenantTable.tsx"), /plataforma/);
 });
 
 test("pagina de detalhe exige Platform Admin e cobre os blocos esperados", () => {

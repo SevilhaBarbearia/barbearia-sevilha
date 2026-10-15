@@ -200,9 +200,7 @@ test(
       /redirect\(`\/admin\/\$\{/,
     );
 
-    assert.match(
-      actions,
-      /redirect\("\/plataforma"\)/,
-    );
+    assert.doesNotMatch(actions, /redirect\(/);
+    assert.match(actions, /revalidatePath\("\/plataforma"\)/);
   },
 );

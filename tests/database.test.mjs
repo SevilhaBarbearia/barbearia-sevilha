@@ -69,21 +69,17 @@ try {
         other,
       ])
     )[0].organization_id;
-    const second = (
+    // Pos-033: um profile so pode ser owner ativo de UMA barbearia.
+    // O indice one_active_owner_per_profile deve rejeitar.
+    let rejeitada = false;
+    try {
       await q(
         "select public.create_barbershop_with_owner('Outra unidade','outra-unidade','owner@example.test',$1) as id",
         [org],
-      )
-    )[0].id;
-    assert.equal(
-      (
-        await q("select organization_id from public.barbershops where id=$1", [
-          second,
-        ])
-      )[0].organization_id,
-      org,
-    );
-    console.log("PASS unidades na mesma organização");
+      );
+    } catch { rejeitada = true; }
+    assert(rejeitada);
+    console.log("PASS segunda barbearia com mesmo owner e rejeitada");
     const shop = (
       await q("select id from public.barbershops where slug='sevilha'")
     )[0].id;
